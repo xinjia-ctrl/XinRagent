@@ -7,14 +7,19 @@ from app.models.knowledge import (
     KnowledgeDocument,
     KnowledgeVector,
 )
+from app.models.intent import IntentNode
+from app.models.trace import RagTraceNode, RagTraceRun
 from app.models.user import User
 
 __all__ = [
     "Conversation",
+    "IntentNode",
     "KnowledgeBase",
     "KnowledgeChunk",
     "KnowledgeDocument",
     "KnowledgeVector",
     "Message",
+    "RagTraceNode",
+    "RagTraceRun",
     "User",
 ]
