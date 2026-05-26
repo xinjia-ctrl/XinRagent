@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
 
 
 @asynccontextmanager
@@ -14,6 +15,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    register_exception_handlers(app)
     app.include_router(api_router)
     return app
 
