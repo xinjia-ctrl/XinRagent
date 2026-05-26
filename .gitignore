@@ -1,0 +1,16 @@
+Python版本改造计划书.md
+
+# IDE
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+venv/
+.env
