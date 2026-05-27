@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ragent"
     redis_url: str = "redis://localhost:6379/0"
 
+    auth_secret_key: str = Field(default="ragent-dev-secret", repr=False)
+    auth_token_expire_seconds: int = 86400
+
     rag_vector_type: str = "pg"
     rag_default_collection_name: str = "rag_default_store"
     rag_default_dimension: int = 1536
