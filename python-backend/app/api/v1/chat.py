@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, Query
 from starlette.responses import StreamingResponse
 
 from app.api.deps import get_current_user
+from app.core.responses import ApiResponse, success
 from app.infra_ai.chat import RoutingLLMService
 from app.infra_ai.config import default_chat_targets
 from app.models import User
 from app.rag.pipeline import StreamChatContext, StreamChatPipeline
 from app.rag.stream import stream_task_manager
+from app.schemas.chat import StopChatRequest, StopChatResponse
 
 router = APIRouter(prefix="/rag/v3", tags=["rag"])
 
@@ -44,6 +46,15 @@ async def stream_chat_api(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/stop", response_model=ApiResponse[StopChatResponse])
+async def stop_chat_api(
+    request: StopChatRequest,
+    _: User = Depends(get_current_user),
+) -> ApiResponse[StopChatResponse]:
+    stopped = stream_task_manager.cancel(request.task_id)
+    return success(StopChatResponse(stopped=stopped))
 
 
 async def _run_pipeline(
