@@ -5,7 +5,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_current_user
-from app.api.v1.chat import get_llm_service
+from app.api.v1.chat import get_llm_service, get_retrieval_engine
 from app.infra_ai.chat import ChatChunk, ChatRequest
 from app.main import create_app
 from app.models import User
@@ -15,6 +15,11 @@ class FakeLLMService:
     async def stream(self, _: ChatRequest) -> AsyncIterator[ChatChunk]:
         yield ChatChunk(delta="你好")
         yield ChatChunk(delta="，Ragent")
+
+
+class EmptyRetrievalEngine:
+    async def retrieve(self, **_: object) -> list:
+        return []
 
 
 def authenticated_user() -> User:
@@ -31,6 +36,7 @@ def create_rag_test_client() -> TestClient:
     app = create_app()
     app.dependency_overrides[get_current_user] = override_current_user
     app.dependency_overrides[get_llm_service] = lambda: FakeLLMService()
+    app.dependency_overrides[get_retrieval_engine] = lambda: EmptyRetrievalEngine()
     return TestClient(app)
 
 
