@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     rag_default_top_k: int = 5
     rag_sse_timeout_ms: int = 300000
 
+    ingestion_storage_dir: str = "storage/uploads"
+
     ai_bailian_url: str = "https://dashscope.aliyuncs.com"
     ai_bailian_api_key: str = Field(default="", repr=False)
     ai_siliconflow_url: str = "https://api.siliconflow.cn"
