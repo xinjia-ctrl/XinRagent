@@ -8,6 +8,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 pytest-cache-files-*/
+test_runtime/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
