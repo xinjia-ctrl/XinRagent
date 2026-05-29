@@ -9,3 +9,4 @@ class UploadedDocumentResponse(BaseModel):
     file_size: int
     storage_path: str
     status: str = "uploaded"
+    chunk_count: int = 0
