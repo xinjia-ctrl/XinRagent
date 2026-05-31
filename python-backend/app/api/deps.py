@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import Depends
+from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,10 +15,18 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def get_access_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> str:
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        return credentials.credentials
+    if authorization:
+        if authorization.lower().startswith("bearer "):
+            return authorization[7:].strip()
+        return authorization.strip()
+    if credentials is not None:
+        return credentials.credentials
+    else:
         raise RagentException(message="未登录或 token 缺失", code="40100", status_code=401)
-    return credentials.credentials
 
 
 def get_token_payload(token: str = Depends(get_access_token)) -> dict[str, Any]:
@@ -37,7 +45,7 @@ async def get_current_user(
         raise RagentException(message="无效或过期的 token", code="40100", status_code=401)
 
     repository = UserRepository(session)
-    user = await repository.get(int(user_id))
+    user = await repository.get(str(user_id))
     if user is None:
         raise RagentException(message="用户不存在", code="40103", status_code=401)
     if user.status != 1:

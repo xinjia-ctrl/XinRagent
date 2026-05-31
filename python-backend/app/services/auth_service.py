@@ -22,4 +22,12 @@ async def login(session: AsyncSession, username: str, password: str) -> TokenRes
     user = await authenticate_user(session, username, password)
     expires_in = settings.auth_token_expire_seconds
     access_token = create_access_token(str(user.id), expires_in=expires_in)
-    return TokenResponse(access_token=access_token, expires_in=expires_in)
+    return TokenResponse(
+        access_token=access_token,
+        token=access_token,
+        userId=str(user.id),
+        username=user.username,
+        role=user.role,
+        avatar=user.avatar,
+        expires_in=expires_in,
+    )

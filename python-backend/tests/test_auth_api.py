@@ -74,6 +74,29 @@ def test_logout_api_accepts_valid_token() -> None:
     assert response.json() == {"code": "0", "message": "success", "data": None}
 
 
+def test_logout_api_accepts_raw_authorization_token() -> None:
+    app = create_app()
+    app.dependency_overrides[get_db_session] = override_db_session
+    client = TestClient(app)
+    user = create_authenticated_test_user()
+
+    with patch("app.services.auth_service.UserRepository") as repository_class:
+        repository_class.return_value.get_by_username = AsyncMock(return_value=user)
+        login_response = client.post(
+            "/api/ragent/auth/login",
+            json={"username": "admin", "password": "secret"},
+        )
+
+    token = login_response.json()["data"]["token"]
+    response = client.post(
+        "/api/ragent/auth/logout",
+        headers={"Authorization": token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"code": "0", "message": "success", "data": None}
+
+
 def test_protected_user_api_rejects_missing_authorization() -> None:
     app = create_app()
     client = TestClient(app)

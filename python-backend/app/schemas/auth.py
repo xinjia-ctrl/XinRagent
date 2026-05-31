@@ -8,5 +8,10 @@ class LoginRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    token: str
+    userId: str
+    username: str
+    role: str
+    avatar: str | None = None
     token_type: str = "Bearer"
     expires_in: int
