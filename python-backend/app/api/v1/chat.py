@@ -6,22 +6,22 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query
 from starlette.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.responses import ApiResponse, success
+from app.db.session import get_db_session
 from app.infra_ai.chat import RoutingLLMService
 from app.infra_ai.config import default_chat_targets, default_embedding_targets
 from app.infra_ai.embedding import RoutingEmbeddingService
 from app.models import User
-from app.db.session import get_db_session
 from app.rag.pipeline import StreamChatContext, StreamChatPipeline
 from app.rag.retrieve import PgVectorStoreService
 from app.rag.retrieve.channels import VectorGlobalSearchChannel
 from app.rag.retrieve.multi_channel_retrieval_engine import MultiChannelRetrievalEngine
 from app.rag.retrieve.retrieval_engine import RetrievalEngine
 from app.rag.stream import stream_task_manager
-from app.schemas.chat import StopChatRequest, StopChatResponse
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.schemas.chat import ChatQuery, StopChatRequest, StopChatResponse
 from app.services.trace_service import TraceService
 
 router = APIRouter(prefix="/rag/v3", tags=["rag"])
@@ -52,19 +52,52 @@ def get_trace_service(session: AsyncSession = Depends(get_db_session)) -> TraceS
 async def stream_chat_api(
     question: str = Query(..., min_length=1),
     conversation_id: str | None = Query(default=None, alias="conversationId"),
+    conversation_id_fallback: str | None = Query(default=None, alias="conversation_id"),
     deep_thinking: bool = Query(default=False, alias="deepThinking"),
+    deep_thinking_fallback: bool | None = Query(default=None, alias="deep_thinking"),
     user: User = Depends(get_current_user),
     llm_service: RoutingLLMService = Depends(get_llm_service),
     retrieval_engine: RetrievalEngine = Depends(get_retrieval_engine),
     trace_service: TraceService = Depends(get_trace_service),
 ) -> StreamingResponse:
+    return _create_chat_stream(
+        ChatQuery(
+            question=question,
+            conversation_id=conversation_id or conversation_id_fallback,
+            deep_thinking=deep_thinking if deep_thinking_fallback is None else deep_thinking_fallback,
+        ),
+        user,
+        llm_service,
+        retrieval_engine,
+        trace_service,
+    )
+
+
+@router.post("/chat")
+async def stream_chat_post_api(
+    request: ChatQuery,
+    user: User = Depends(get_current_user),
+    llm_service: RoutingLLMService = Depends(get_llm_service),
+    retrieval_engine: RetrievalEngine = Depends(get_retrieval_engine),
+    trace_service: TraceService = Depends(get_trace_service),
+) -> StreamingResponse:
+    return _create_chat_stream(request, user, llm_service, retrieval_engine, trace_service)
+
+
+def _create_chat_stream(
+    request: ChatQuery,
+    user: User,
+    llm_service: RoutingLLMService,
+    retrieval_engine: RetrievalEngine | None,
+    trace_service: TraceService | None,
+) -> StreamingResponse:
     task_id = uuid4().hex
     context = StreamChatContext(
-        question=question,
-        conversation_id=conversation_id,
+        question=request.question,
+        conversation_id=request.conversation_id,
         task_id=task_id,
         user_id=str(user.id),
-        deep_thinking=deep_thinking,
+        deep_thinking=request.deep_thinking,
     )
     queue: asyncio.Queue[dict] = asyncio.Queue()
     task = asyncio.create_task(_run_pipeline(context, llm_service, retrieval_engine, trace_service, queue))
