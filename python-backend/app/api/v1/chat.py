@@ -4,11 +4,13 @@ from collections.abc import AsyncIterator
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query
-from starlette.responses import StreamingResponse
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import StreamingResponse
 
 from app.api.deps import get_current_user
+from app.common.ids import generate_id
+from app.core.exceptions import RagentException
 from app.core.responses import ApiResponse, success
 from app.db.session import get_db_session
 from app.infra_ai.chat import RoutingLLMService
@@ -94,7 +96,7 @@ def _create_chat_stream(
     task_id = uuid4().hex
     context = StreamChatContext(
         question=request.question,
-        conversation_id=request.conversation_id,
+        conversation_id=request.conversation_id or generate_id(),
         task_id=task_id,
         user_id=str(user.id),
         deep_thinking=request.deep_thinking,
@@ -111,10 +113,15 @@ def _create_chat_stream(
 
 @router.post("/stop", response_model=ApiResponse[StopChatResponse])
 async def stop_chat_api(
-    request: StopChatRequest,
+    request: StopChatRequest | None = Body(default=None),
+    task_id: str | None = Query(default=None, alias="taskId"),
+    task_id_fallback: str | None = Query(default=None, alias="task_id"),
     _: User = Depends(get_current_user),
 ) -> ApiResponse[StopChatResponse]:
-    stopped = stream_task_manager.cancel(request.task_id)
+    resolved_task_id = task_id or task_id_fallback or (request.task_id if request is not None else None)
+    if not resolved_task_id:
+        raise RagentException(message="taskId 不能为空", code="40001", status_code=400)
+    stopped = stream_task_manager.cancel(resolved_task_id)
     return success(StopChatResponse(stopped=stopped))
 
 
@@ -136,12 +143,13 @@ async def _run_pipeline(
                 user_id=context.user_id,
                 conversation_id=context.conversation_id,
             )
-        await queue.put({"type": "start", "conversationId": context.conversation_id, "taskId": context.task_id})
+        await queue.put({"__event": "meta", "conversationId": context.conversation_id, "taskId": context.task_id})
         async for delta in pipeline.execute(context):
             await queue.put(
                 {
-                    "type": "delta",
-                    "content": delta,
+                    "__event": "message",
+                    "type": "response",
+                    "delta": delta,
                     "conversationId": context.conversation_id,
                     "taskId": context.task_id,
                 },
@@ -155,11 +163,27 @@ async def _run_pipeline(
                 duration_ms=TraceService.elapsed_ms(started_at),
             )
             await trace_service.finish_run(trace_id, status="SUCCESS")
-        await queue.put({"type": "complete", "conversationId": context.conversation_id, "taskId": context.task_id})
+        await queue.put(
+            {
+                "__event": "finish",
+                "conversationId": context.conversation_id,
+                "taskId": context.task_id,
+                "messageId": None,
+                "title": None,
+            },
+        )
     except asyncio.CancelledError:
         if trace_service is not None and trace_id is not None:
             await trace_service.finish_run(trace_id, status="CANCELLED")
-        await queue.put({"type": "stopped", "conversationId": context.conversation_id, "taskId": context.task_id})
+        await queue.put(
+            {
+                "__event": "cancel",
+                "conversationId": context.conversation_id,
+                "taskId": context.task_id,
+                "messageId": None,
+                "title": None,
+            },
+        )
         raise
     except Exception as exc:
         if trace_service is not None and trace_id is not None:
@@ -174,19 +198,21 @@ async def _run_pipeline(
             await trace_service.finish_run(trace_id, status="FAILED", error_message=str(exc))
         await queue.put(
             {
-                "type": "error",
-                "message": str(exc),
+                "__event": "error",
+                "error": str(exc),
                 "conversationId": context.conversation_id,
                 "taskId": context.task_id,
             },
         )
     finally:
-        await queue.put({"type": "done"})
+        await queue.put({"__event": "done"})
+        await queue.put({"__event": "__end"})
 
 
 async def _event_stream(queue: asyncio.Queue[dict]) -> AsyncIterator[str]:
     while True:
         payload = await queue.get()
-        if payload.get("type") == "done":
+        event_name = payload.pop("__event", "message")
+        if event_name == "__end":
             break
-        yield f"event: message\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        yield f"event: {event_name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
