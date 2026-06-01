@@ -6,6 +6,7 @@ from app.core.responses import ApiResponse, success
 from app.db.session import get_db_session
 from app.models import User
 from app.schemas.knowledge import (
+    ChunkStrategyOption,
     DeleteResponse,
     KnowledgeBaseCreateRequest,
     KnowledgeBasePageResponse,
@@ -30,6 +31,14 @@ async def list_knowledge_bases_api(
     service: KnowledgeService = Depends(get_knowledge_service),
 ) -> ApiResponse[KnowledgeBasePageResponse]:
     return success(await service.list_knowledge_bases(current=current, size=size, name=name))
+
+
+@router.get("/chunk-strategies", response_model=ApiResponse[list[ChunkStrategyOption]])
+async def list_chunk_strategies_api(
+    _: User = Depends(get_current_user),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> ApiResponse[list[ChunkStrategyOption]]:
+    return success(await service.list_chunk_strategies())
 
 
 @router.get("/{kb_id}", response_model=ApiResponse[KnowledgeBaseResponse])

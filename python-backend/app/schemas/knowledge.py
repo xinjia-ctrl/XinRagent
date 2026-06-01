@@ -32,14 +32,16 @@ class KnowledgeBaseUpdateRequest(BaseModel):
 
 
 class KnowledgeBaseResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     name: str
-    embeddingModel: str
-    collectionName: str
-    createdBy: str | None = None
-    documentCount: int = 0
-    createTime: datetime | None = None
-    updateTime: datetime | None = None
+    embeddingModel: str = Field(validation_alias=AliasChoices("embedding_model", "embeddingModel"))
+    collectionName: str = Field(validation_alias=AliasChoices("collection_name", "collectionName"))
+    createdBy: str | None = Field(default=None, validation_alias=AliasChoices("created_by", "createdBy"))
+    documentCount: int = Field(default=0, validation_alias=AliasChoices("document_count", "documentCount"))
+    createTime: datetime | None = Field(default=None, validation_alias=AliasChoices("create_time", "createTime"))
+    updateTime: datetime | None = Field(default=None, validation_alias=AliasChoices("update_time", "updateTime"))
 
 
 class KnowledgeBasePageResponse(BaseModel):
@@ -52,3 +54,9 @@ class KnowledgeBasePageResponse(BaseModel):
 
 class DeleteResponse(BaseModel):
     deleted: bool
+
+
+class ChunkStrategyOption(BaseModel):
+    value: str
+    label: str
+    defaultConfig: dict[str, int]

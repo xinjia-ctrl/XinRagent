@@ -7,6 +7,7 @@ from app.common.ids import generate_id
 from app.core.config import settings
 from app.core.exceptions import RagentException
 from app.schemas.knowledge import (
+    ChunkStrategyOption,
     DeleteResponse,
     KnowledgeBaseCreateRequest,
     KnowledgeBasePageResponse,
@@ -72,6 +73,20 @@ class KnowledgeService:
 
     async def get_knowledge_base(self, kb_id: str) -> KnowledgeBaseResponse:
         return self._map_kb(await self._get_knowledge_base(kb_id))
+
+    async def list_chunk_strategies(self) -> list[ChunkStrategyOption]:
+        return [
+            ChunkStrategyOption(
+                value="fixed_size",
+                label="固定长度分块",
+                defaultConfig={"chunkSize": 800, "overlap": 100},
+            ),
+            ChunkStrategyOption(
+                value="markdown_heading",
+                label="Markdown 标题分块",
+                defaultConfig={"maxChunkSize": 1200, "overlap": 100},
+            ),
+        ]
 
     async def create_knowledge_base(
         self,
