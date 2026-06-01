@@ -7,19 +7,55 @@ from app.api.v1.traces import get_trace_service
 from app.main import create_app
 from app.models import User
 from app.schemas.document import KnowledgeChunkResponse, KnowledgeDocumentResponse
-from app.schemas.knowledge import DeleteResponse, KnowledgeBaseResponse
+from app.schemas.knowledge import (
+    ChunkStrategyOption,
+    DeleteResponse,
+    KnowledgeBasePageResponse,
+    KnowledgeBaseResponse,
+)
 from app.schemas.trace import TraceDetailResponse, TraceNodeResponse, TraceRunResponse
 
 
 class FakeKnowledgeService:
-    async def list_knowledge_bases(self) -> list[KnowledgeBaseResponse]:
+    async def list_knowledge_bases(
+        self,
+        current: int = 1,
+        size: int = 10,
+        name: str | None = None,
+    ) -> KnowledgeBasePageResponse:
+        return KnowledgeBasePageResponse(
+            records=[
+                KnowledgeBaseResponse(
+                    id="kb-1",
+                    name=name or "默认知识库",
+                    embeddingModel="qwen-emb-8b",
+                    collectionName="kb_default",
+                    createdBy="1",
+                    documentCount=2,
+                ),
+            ],
+            total=1,
+            size=size,
+            current=current,
+            pages=1,
+        )
+
+    async def get_knowledge_base(self, kb_id: str) -> KnowledgeBaseResponse:
+        return KnowledgeBaseResponse(
+            id=kb_id,
+            name="默认知识库",
+            embeddingModel="qwen-emb-8b",
+            collectionName="kb_default",
+            createdBy="1",
+            documentCount=2,
+        )
+
+    async def list_chunk_strategies(self) -> list[ChunkStrategyOption]:
         return [
-            KnowledgeBaseResponse(
-                id="kb-1",
-                name="默认知识库",
-                embedding_model="qwen-emb-8b",
-                collection_name="kb_default",
-                created_by="1",
+            ChunkStrategyOption(
+                value="fixed_size",
+                label="固定长度分块",
+                defaultConfig={"chunkSize": 800, "overlap": 100},
             ),
         ]
 
@@ -27,18 +63,18 @@ class FakeKnowledgeService:
         return KnowledgeBaseResponse(
             id="kb-new",
             name=request.name,
-            embedding_model=request.embedding_model,
-            collection_name=request.collection_name or "kb_kb-new",
-            created_by=user_id,
+            embeddingModel=request.embedding_model,
+            collectionName=request.collection_name or "kb_kb-new",
+            createdBy=user_id,
         )
 
     async def update_knowledge_base(self, kb_id: str, request, user_id: str) -> KnowledgeBaseResponse:
         return KnowledgeBaseResponse(
             id=kb_id,
             name=request.name or "更新后的知识库",
-            embedding_model=request.embedding_model or "qwen-emb-8b",
-            collection_name=request.collection_name or "kb_default",
-            created_by=user_id,
+            embeddingModel=request.embedding_model or "qwen-emb-8b",
+            collectionName=request.collection_name or "kb_default",
+            createdBy=user_id,
         )
 
     async def delete_knowledge_base(self, _: str, __: str) -> DeleteResponse:
@@ -134,14 +170,19 @@ def test_knowledge_base_management_api() -> None:
     client = create_management_client()
 
     list_response = client.get("/api/ragent/knowledge-base")
+    detail_response = client.get("/api/ragent/knowledge-base/kb-1")
     create_response = client.post("/api/ragent/knowledge-base", json={"name": "新知识库"})
     update_response = client.put("/api/ragent/knowledge-base/kb-1", json={"name": "更新后的知识库"})
+    strategies_response = client.get("/api/ragent/knowledge-base/chunk-strategies")
     delete_response = client.delete("/api/ragent/knowledge-base/kb-1")
 
     assert list_response.status_code == 200
-    assert list_response.json()["data"][0]["id"] == "kb-1"
-    assert create_response.json()["data"]["id"] == "kb-new"
-    assert update_response.json()["data"]["name"] == "更新后的知识库"
+    assert list_response.json()["data"]["records"][0]["id"] == "kb-1"
+    assert list_response.json()["data"]["records"][0]["embeddingModel"] == "qwen-emb-8b"
+    assert detail_response.json()["data"]["collectionName"] == "kb_default"
+    assert create_response.json()["data"] == "kb-new"
+    assert update_response.json()["data"] is None
+    assert strategies_response.json()["data"][0]["value"] == "fixed_size"
     assert delete_response.json()["data"] == {"deleted": True}
 
 
