@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -8,6 +8,7 @@ from app.models import User
 from app.schemas.knowledge import (
     DeleteResponse,
     KnowledgeBaseCreateRequest,
+    KnowledgeBasePageResponse,
     KnowledgeBaseResponse,
     KnowledgeBaseUpdateRequest,
 )
@@ -20,31 +21,45 @@ def get_knowledge_service(session: AsyncSession = Depends(get_db_session)) -> Kn
     return KnowledgeService(session)
 
 
-@router.get("", response_model=ApiResponse[list[KnowledgeBaseResponse]])
+@router.get("", response_model=ApiResponse[KnowledgeBasePageResponse])
 async def list_knowledge_bases_api(
+    current: int = Query(default=1, ge=1),
+    size: int = Query(default=10, ge=1, le=200),
+    name: str | None = None,
     _: User = Depends(get_current_user),
     service: KnowledgeService = Depends(get_knowledge_service),
-) -> ApiResponse[list[KnowledgeBaseResponse]]:
-    return success(await service.list_knowledge_bases())
+) -> ApiResponse[KnowledgeBasePageResponse]:
+    return success(await service.list_knowledge_bases(current=current, size=size, name=name))
 
 
-@router.post("", response_model=ApiResponse[KnowledgeBaseResponse])
+@router.get("/{kb_id}", response_model=ApiResponse[KnowledgeBaseResponse])
+async def get_knowledge_base_api(
+    kb_id: str,
+    _: User = Depends(get_current_user),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> ApiResponse[KnowledgeBaseResponse]:
+    return success(await service.get_knowledge_base(kb_id))
+
+
+@router.post("", response_model=ApiResponse[str])
 async def create_knowledge_base_api(
     request: KnowledgeBaseCreateRequest,
     user: User = Depends(get_current_user),
     service: KnowledgeService = Depends(get_knowledge_service),
-) -> ApiResponse[KnowledgeBaseResponse]:
-    return success(await service.create_knowledge_base(request, str(user.id)))
+) -> ApiResponse[str]:
+    created = await service.create_knowledge_base(request, str(user.id))
+    return success(created.id)
 
 
-@router.put("/{kb_id}", response_model=ApiResponse[KnowledgeBaseResponse])
+@router.put("/{kb_id}", response_model=ApiResponse[None])
 async def update_knowledge_base_api(
     kb_id: str,
     request: KnowledgeBaseUpdateRequest,
     user: User = Depends(get_current_user),
     service: KnowledgeService = Depends(get_knowledge_service),
-) -> ApiResponse[KnowledgeBaseResponse]:
-    return success(await service.update_knowledge_base(kb_id, request, str(user.id)))
+) -> ApiResponse[None]:
+    await service.update_knowledge_base(kb_id, request, str(user.id))
+    return success()
 
 
 @router.delete("/{kb_id}", response_model=ApiResponse[DeleteResponse])
