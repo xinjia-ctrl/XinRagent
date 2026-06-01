@@ -23,6 +23,12 @@ from app.schemas.user import (
 router = APIRouter(tags=["user"])
 
 
+def require_admin_user(user: User = Depends(get_current_user)) -> User:
+    if user.role != "admin":
+        raise RagentException(message="无权访问用户管理", code="40301", status_code=403)
+    return user
+
+
 @router.get("/user/me", response_model=ApiResponse[CurrentUserResponse])
 async def current_user_api(user: User = Depends(get_current_user)) -> ApiResponse[CurrentUserResponse]:
     return success(_to_current_user_response(user))
@@ -46,7 +52,7 @@ async def list_users_api(
     current: int = Query(default=1, ge=1),
     size: int = Query(default=10, ge=1, le=100),
     keyword: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[UserPageResponse]:
     repository = UserRepository(session)
@@ -66,7 +72,7 @@ async def list_users_api(
 @router.post("/users", response_model=ApiResponse[str])
 async def create_user_api(
     request: UserCreateRequest,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[str]:
     repository = UserRepository(session)
@@ -92,7 +98,7 @@ async def create_user_api(
 async def update_user_api(
     user_id: str,
     request: UserUpdateRequest,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[None]:
     repository = UserRepository(session)
@@ -121,7 +127,7 @@ async def update_user_api(
 @router.delete("/users/{user_id}", response_model=ApiResponse[None])
 async def delete_user_api(
     user_id: str,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ApiResponse[None]:
     repository = UserRepository(session)
