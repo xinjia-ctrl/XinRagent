@@ -44,8 +44,14 @@ def create_rag_test_client() -> TestClient:
 def parse_sse_events(content: str) -> list[dict]:
     events = []
     for block in content.strip().split("\n\n"):
+        event_line = next(line for line in block.splitlines() if line.startswith("event: "))
         data_line = next(line for line in block.splitlines() if line.startswith("data: "))
-        events.append(json.loads(data_line.removeprefix("data: ")))
+        events.append(
+            {
+                "event": event_line.removeprefix("event: "),
+                "data": json.loads(data_line.removeprefix("data: ")),
+            },
+        )
     return events
 
 
@@ -63,10 +69,11 @@ def test_stream_chat_api_returns_sse_events() -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
-    assert [event["type"] for event in events] == ["start", "delta", "delta", "complete"]
-    assert "".join(event.get("content", "") for event in events) == "你好，Ragent"
-    assert all(event["conversationId"] == "conv-1" for event in events)
-    assert all(event["taskId"] for event in events)
+    assert [event["event"] for event in events] == ["meta", "message", "message", "finish", "done"]
+    assert "".join(event["data"].get("delta", "") for event in events) == "你好，Ragent"
+    assert events[0]["data"]["conversationId"] == "conv-1"
+    assert events[0]["data"]["taskId"]
+    assert events[1]["data"]["type"] == "response"
 
 
 def test_stop_chat_api_cancels_registered_task() -> None:
@@ -78,6 +85,34 @@ def test_stop_chat_api_cancels_registered_task() -> None:
     assert response.status_code == 200
     assert response.json() == {"code": "0", "message": "success", "data": {"stopped": True}}
     cancel.assert_called_once_with("task-to-stop")
+
+
+def test_stop_chat_api_accepts_frontend_query_task_id() -> None:
+    client = create_rag_test_client()
+
+    with patch("app.api.v1.chat.stream_task_manager.cancel", return_value=True) as cancel:
+        response = client.post("/api/ragent/rag/v3/stop?taskId=task-from-query")
+
+    assert response.status_code == 200
+    assert response.json() == {"code": "0", "message": "success", "data": {"stopped": True}}
+    cancel.assert_called_once_with("task-from-query")
+
+
+def test_stream_chat_api_generates_conversation_id_when_missing() -> None:
+    client = create_rag_test_client()
+
+    with client.stream(
+        "GET",
+        "/api/ragent/rag/v3/chat",
+        params={"question": "你好"},
+    ) as response:
+        content = response.read().decode("utf-8")
+
+    events = parse_sse_events(content)
+
+    assert response.status_code == 200
+    assert events[0]["event"] == "meta"
+    assert events[0]["data"]["conversationId"]
 
 
 def test_stream_chat_api_requires_authorization() -> None:

@@ -39,8 +39,14 @@ def create_regression_client() -> TestClient:
 def parse_sse_events(content: str) -> list[dict]:
     events = []
     for block in content.strip().split("\n\n"):
+        event_line = next(line for line in block.splitlines() if line.startswith("event: "))
         data_line = next(line for line in block.splitlines() if line.startswith("data: "))
-        events.append(json.loads(data_line.removeprefix("data: ")))
+        events.append(
+            {
+                "event": event_line.removeprefix("event: "),
+                "data": json.loads(data_line.removeprefix("data: ")),
+            },
+        )
     return events
 
 
@@ -59,14 +65,14 @@ def test_core_backend_contract_regression() -> None:
     with patch("app.api.v1.chat.stream_task_manager.cancel", return_value=True) as cancel:
         stop_response = client.post(
             "/api/ragent/rag/v3/stop",
-            json={"taskId": chat_events[0]["taskId"]},
+            json={"taskId": chat_events[0]["data"]["taskId"]},
         )
 
     assert health_response.status_code == 200
     assert health_response.json() == {"status": "ok"}
     assert chat_response.status_code == 200
-    assert [event["type"] for event in chat_events] == ["start", "delta", "complete"]
-    assert chat_events[0]["conversationId"] == "conv-10"
-    assert chat_events[1]["content"] == "pong"
+    assert [event["event"] for event in chat_events] == ["meta", "message", "finish", "done"]
+    assert chat_events[0]["data"]["conversationId"] == "conv-10"
+    assert chat_events[1]["data"]["delta"] == "pong"
     assert stop_response.json() == {"code": "0", "message": "success", "data": {"stopped": True}}
-    cancel.assert_called_once_with(chat_events[0]["taskId"])
+    cancel.assert_called_once_with(chat_events[0]["data"]["taskId"])
