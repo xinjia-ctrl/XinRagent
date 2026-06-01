@@ -39,6 +39,10 @@ def test_login_api_returns_access_token() -> None:
     assert body["code"] == "0"
     assert body["data"]["token_type"] == "Bearer"
     assert body["data"]["access_token"]
+    assert body["data"]["token"] == body["data"]["access_token"]
+    assert body["data"]["userId"] == "1"
+    assert body["data"]["username"] == "admin"
+    assert body["data"]["role"] == "admin"
 
 
 def test_logout_api_requires_authorization() -> None:
