@@ -13,6 +13,12 @@ from app.schemas.ingestion import (
     IngestionPipelinePageResponse,
     IngestionPipelinePayload,
     IngestionPipelineResponse,
+    IngestionResultResponse,
+    IngestionTaskCreateRequest,
+    IngestionTaskNodeLog,
+    IngestionTaskNodeResponse,
+    IngestionTaskPageResponse,
+    IngestionTaskResponse,
 )
 
 
@@ -157,6 +163,124 @@ class IngestionService:
         )
         await self.session.commit()
 
+    async def list_tasks(
+        self,
+        page_no: int = 1,
+        page_size: int = 10,
+        status: str | None = None,
+    ) -> IngestionTaskPageResponse:
+        page_no = max(page_no, 1)
+        page_size = max(min(page_size, 200), 1)
+        params: dict[str, object] = {"limit": page_size, "offset": (page_no - 1) * page_size}
+        where = ["deleted = 0"]
+        if status:
+            where.append("status = :status")
+            params["status"] = status
+        where_sql = " AND ".join(where)
+
+        total = await self.session.scalar(
+            text(f"SELECT COUNT(*) FROM t_ingestion_task WHERE {where_sql}"),
+            params,
+        )
+        result = await self.session.execute(
+            text(
+                f"""
+                SELECT {self._task_columns()}
+                FROM t_ingestion_task
+                WHERE {where_sql}
+                ORDER BY create_time DESC
+                LIMIT :limit OFFSET :offset
+                """,
+            ),
+            params,
+        )
+        total_count = int(total or 0)
+        return IngestionTaskPageResponse(
+            records=[self._map_task(row) for row in result.mappings().all()],
+            total=total_count,
+            size=page_size,
+            current=page_no,
+            pages=ceil(total_count / page_size) if total_count else 0,
+        )
+
+    async def get_task(self, task_id: str) -> IngestionTaskResponse:
+        return self._map_task(await self._get_task_row(task_id))
+
+    async def list_task_nodes(self, task_id: str) -> list[IngestionTaskNodeResponse]:
+        await self._get_task_row(task_id)
+        result = await self.session.execute(
+            text(
+                """
+                SELECT
+                    id, task_id, pipeline_id, node_id, node_type, node_order, status,
+                    duration_ms, message, error_message, output_json, create_time, update_time
+                FROM t_ingestion_task_node
+                WHERE task_id = :task_id AND deleted = 0
+                ORDER BY node_order ASC, create_time ASC
+                """,
+            ),
+            {"task_id": task_id},
+        )
+        return [self._map_task_node(row) for row in result.mappings().all()]
+
+    async def create_task(
+        self,
+        request: IngestionTaskCreateRequest,
+        user_id: str,
+    ) -> IngestionResultResponse:
+        await self._get_pipeline_row(request.pipeline_id)
+        task_id = generate_id()
+        metadata = dict(request.metadata or {})
+        if request.vectorSpaceId is not None:
+            metadata["vectorSpaceId"] = request.vectorSpaceId
+        await self._insert_task(
+            task_id=task_id,
+            pipeline_id=request.pipeline_id,
+            source_type=request.source.type,
+            source_location=request.source.location,
+            source_file_name=request.source.fileName,
+            metadata=metadata or None,
+            user_id=user_id,
+        )
+        await self._create_task_nodes_from_pipeline(task_id, request.pipeline_id)
+        await self.session.commit()
+        return IngestionResultResponse(
+            taskId=task_id,
+            pipelineId=request.pipeline_id,
+            status="pending",
+            chunkCount=0,
+            message="任务已创建",
+        )
+
+    async def create_upload_task(
+        self,
+        *,
+        pipeline_id: str,
+        source_location: str,
+        source_file_name: str,
+        user_id: str,
+    ) -> IngestionResultResponse:
+        await self._get_pipeline_row(pipeline_id)
+        task_id = generate_id()
+        await self._insert_task(
+            task_id=task_id,
+            pipeline_id=pipeline_id,
+            source_type="file",
+            source_location=source_location,
+            source_file_name=source_file_name,
+            metadata=None,
+            user_id=user_id,
+        )
+        await self._create_task_nodes_from_pipeline(task_id, pipeline_id)
+        await self.session.commit()
+        return IngestionResultResponse(
+            taskId=task_id,
+            pipelineId=pipeline_id,
+            status="pending",
+            chunkCount=0,
+            message="文件任务已创建",
+        )
+
     async def _get_pipeline_row(self, pipeline_id: str):
         result = await self.session.execute(
             text(
@@ -171,6 +295,22 @@ class IngestionService:
         row = result.mappings().first()
         if row is None:
             raise RagentException(message="入库流水线不存在", code="INGESTION_PIPELINE_NOT_FOUND", status_code=404)
+        return row
+
+    async def _get_task_row(self, task_id: str):
+        result = await self.session.execute(
+            text(
+                f"""
+                SELECT {self._task_columns()}
+                FROM t_ingestion_task
+                WHERE id = :id AND deleted = 0
+                """,
+            ),
+            {"id": task_id},
+        )
+        row = result.mappings().first()
+        if row is None:
+            raise RagentException(message="入库任务不存在", code="INGESTION_TASK_NOT_FOUND", status_code=404)
         return row
 
     async def _list_pipeline_nodes(self, pipeline_id: str) -> list[IngestionPipelineNodeResponse]:
@@ -220,6 +360,78 @@ class IngestionService:
                 },
             )
 
+    async def _insert_task(
+        self,
+        *,
+        task_id: str,
+        pipeline_id: str,
+        source_type: str,
+        source_location: str | None,
+        source_file_name: str | None,
+        metadata: dict[str, Any] | None,
+        user_id: str,
+    ) -> None:
+        await self.session.execute(
+            text(
+                """
+                INSERT INTO t_ingestion_task (
+                    id, pipeline_id, source_type, source_location, source_file_name,
+                    status, chunk_count, logs_json, metadata_json, started_at,
+                    created_by, updated_by
+                )
+                VALUES (
+                    :id, :pipeline_id, :source_type, :source_location, :source_file_name,
+                    'pending', 0, CAST(:logs_json AS jsonb), CAST(:metadata_json AS jsonb),
+                    CURRENT_TIMESTAMP, :user_id, :user_id
+                )
+                """,
+            ),
+            {
+                "id": task_id,
+                "pipeline_id": pipeline_id,
+                "source_type": source_type,
+                "source_location": source_location,
+                "source_file_name": source_file_name,
+                "logs_json": self._to_json_text([]),
+                "metadata_json": self._to_json_text(metadata),
+                "user_id": user_id,
+            },
+        )
+
+    async def _create_task_nodes_from_pipeline(self, task_id: str, pipeline_id: str) -> None:
+        result = await self.session.execute(
+            text(
+                """
+                SELECT node_id, node_type
+                FROM t_ingestion_pipeline_node
+                WHERE pipeline_id = :pipeline_id AND deleted = 0
+                ORDER BY create_time ASC
+                """,
+            ),
+            {"pipeline_id": pipeline_id},
+        )
+        for index, row in enumerate(result.mappings().all()):
+            await self.session.execute(
+                text(
+                    """
+                    INSERT INTO t_ingestion_task_node (
+                        id, task_id, pipeline_id, node_id, node_type, node_order, status
+                    )
+                    VALUES (
+                        :id, :task_id, :pipeline_id, :node_id, :node_type, :node_order, 'pending'
+                    )
+                    """,
+                ),
+                {
+                    "id": generate_id(),
+                    "task_id": task_id,
+                    "pipeline_id": pipeline_id,
+                    "node_id": row["node_id"],
+                    "node_type": row["node_type"],
+                    "node_order": index,
+                },
+            )
+
     @staticmethod
     def _map_pipeline(row: Any, nodes: list[IngestionPipelineNodeResponse]) -> IngestionPipelineResponse:
         return IngestionPipelineResponse(
@@ -244,7 +456,53 @@ class IngestionService:
         )
 
     @staticmethod
-    def _to_json_text(value: dict[str, Any] | None) -> str | None:
+    def _map_task(row: Any) -> IngestionTaskResponse:
+        return IngestionTaskResponse(
+            id=str(row["id"]),
+            pipelineId=str(row["pipeline_id"]),
+            sourceType=row.get("source_type"),
+            sourceLocation=row.get("source_location"),
+            sourceFileName=row.get("source_file_name"),
+            status=row.get("status"),
+            chunkCount=row.get("chunk_count"),
+            errorMessage=row.get("error_message"),
+            logs=IngestionService._to_task_logs(row.get("logs_json")),
+            metadata=IngestionService._to_dict(row.get("metadata_json")),
+            startedAt=row.get("started_at"),
+            completedAt=row.get("completed_at"),
+            createdBy=str(row["created_by"]) if row.get("created_by") is not None else None,
+            createTime=row.get("create_time"),
+            updateTime=row.get("update_time"),
+        )
+
+    @staticmethod
+    def _map_task_node(row: Any) -> IngestionTaskNodeResponse:
+        return IngestionTaskNodeResponse(
+            id=str(row["id"]),
+            taskId=str(row["task_id"]),
+            pipelineId=str(row["pipeline_id"]),
+            nodeId=row["node_id"],
+            nodeType=row["node_type"],
+            nodeOrder=row.get("node_order"),
+            status=row.get("status"),
+            durationMs=row.get("duration_ms"),
+            message=row.get("message"),
+            errorMessage=row.get("error_message"),
+            output=IngestionService._to_dict(row.get("output_json")),
+            createTime=row.get("create_time"),
+            updateTime=row.get("update_time"),
+        )
+
+    @staticmethod
+    def _task_columns() -> str:
+        return """
+            id, pipeline_id, source_type, source_location, source_file_name,
+            status, chunk_count, error_message, logs_json, metadata_json,
+            started_at, completed_at, created_by, create_time, update_time
+        """
+
+    @staticmethod
+    def _to_json_text(value: Any) -> str | None:
         if value is None:
             return None
         return json.dumps(value, ensure_ascii=False)
@@ -256,3 +514,10 @@ class IngestionService:
         if isinstance(value, str):
             return json.loads(value)
         return dict(value)
+
+    @staticmethod
+    def _to_task_logs(value: Any) -> list[IngestionTaskNodeLog] | None:
+        if value is None:
+            return None
+        logs = json.loads(value) if isinstance(value, str) else value
+        return [IngestionTaskNodeLog(**item) for item in logs]
