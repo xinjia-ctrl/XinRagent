@@ -6,7 +6,12 @@ from app.api.v1.knowledge_base import get_knowledge_service
 from app.api.v1.traces import get_trace_service
 from app.main import create_app
 from app.models import User
-from app.schemas.document import KnowledgeChunkResponse, KnowledgeDocumentResponse
+from app.schemas.document import (
+    KnowledgeChunkPageResponse,
+    KnowledgeChunkResponse,
+    KnowledgeDocumentPageResponse,
+    KnowledgeDocumentResponse,
+)
 from app.schemas.knowledge import (
     ChunkStrategyOption,
     DeleteResponse,
@@ -82,44 +87,70 @@ class FakeKnowledgeService:
 
 
 class FakeDocumentService:
-    async def list_documents(self, kb_id: str) -> list[KnowledgeDocumentResponse]:
-        return [
-            KnowledgeDocumentResponse(
-                id="doc-1",
-                kb_id=kb_id,
-                doc_name="intro.md",
-                file_url="storage/intro.md",
-                file_type="md",
-                file_size=12,
-                status="indexed",
-                chunk_count=1,
-            ),
-        ]
+    async def list_documents(
+        self,
+        kb_id: str,
+        current: int = 1,
+        size: int = 10,
+        status: str | None = None,
+        keyword: str | None = None,
+    ) -> KnowledgeDocumentPageResponse:
+        return KnowledgeDocumentPageResponse(
+            records=[
+                KnowledgeDocumentResponse(
+                    id="doc-1",
+                    kbId=kb_id,
+                    docName=keyword or "intro.md",
+                    fileUrl="storage/intro.md",
+                    fileType="md",
+                    fileSize=12,
+                    status=status or "indexed",
+                    chunkCount=1,
+                ),
+            ],
+            total=1,
+            size=size,
+            current=current,
+            pages=1,
+        )
 
     async def get_document(self, doc_id: str) -> KnowledgeDocumentResponse:
         return KnowledgeDocumentResponse(
             id=doc_id,
-            kb_id="kb-1",
-            doc_name="intro.md",
-            file_url="storage/intro.md",
-            file_type="md",
-            file_size=12,
+            kbId="kb-1",
+            docName="intro.md",
+            fileUrl="storage/intro.md",
+            fileType="md",
+            fileSize=12,
             status="indexed",
-            chunk_count=1,
+            chunkCount=1,
         )
 
-    async def list_chunks(self, doc_id: str) -> list[KnowledgeChunkResponse]:
-        return [
-            KnowledgeChunkResponse(
-                id="chunk-1",
-                kb_id="kb-1",
-                doc_id=doc_id,
-                chunk_index=0,
-                content="Ragent 知识片段",
-                char_count=10,
-                token_count=2,
-            ),
-        ]
+    async def list_chunks(
+        self,
+        doc_id: str,
+        current: int = 1,
+        size: int = 10,
+        enabled: int | None = None,
+    ) -> KnowledgeChunkPageResponse:
+        return KnowledgeChunkPageResponse(
+            records=[
+                KnowledgeChunkResponse(
+                    id="chunk-1",
+                    kbId="kb-1",
+                    docId=doc_id,
+                    chunkIndex=0,
+                    content="Ragent 知识片段",
+                    charCount=10,
+                    tokenCount=2,
+                    enabled=enabled if enabled is not None else 1,
+                ),
+            ],
+            total=1,
+            size=size,
+            current=current,
+            pages=1,
+        )
 
 
 class FakeTraceService:
@@ -194,9 +225,9 @@ def test_document_and_chunk_query_api() -> None:
     chunks_response = client.get("/api/ragent/knowledge-base/docs/doc-1/chunks")
 
     assert docs_response.status_code == 200
-    assert docs_response.json()["data"][0]["doc_name"] == "intro.md"
+    assert docs_response.json()["data"]["records"][0]["docName"] == "intro.md"
     assert doc_response.json()["data"]["id"] == "doc-1"
-    assert chunks_response.json()["data"][0]["content"] == "Ragent 知识片段"
+    assert chunks_response.json()["data"]["records"][0]["content"] == "Ragent 知识片段"
 
 
 def test_trace_query_api() -> None:
