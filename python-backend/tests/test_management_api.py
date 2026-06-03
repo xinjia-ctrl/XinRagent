@@ -18,7 +18,7 @@ from app.schemas.knowledge import (
     KnowledgeBasePageResponse,
     KnowledgeBaseResponse,
 )
-from app.schemas.trace import TraceDetailResponse, TraceNodeResponse, TraceRunResponse
+from app.schemas.trace import TraceDetailResponse, TraceNodeResponse, TraceRunPageResponse, TraceRunResponse
 
 
 class FakeKnowledgeService:
@@ -154,32 +154,59 @@ class FakeDocumentService:
 
 
 class FakeTraceService:
-    async def list_runs(self, limit: int = 50) -> list[TraceRunResponse]:
-        return [
-            TraceRunResponse(
-                trace_id="trace-1",
-                trace_name="rag_chat",
-                conversation_id="conv-1",
-                task_id="task-1",
-                user_id="1",
-                status="SUCCESS",
-                duration_ms=12,
-            ),
-        ][:limit]
+    async def list_runs(
+        self,
+        current: int = 1,
+        size: int = 10,
+        trace_id: str | None = None,
+        conversation_id: str | None = None,
+        task_id: str | None = None,
+        status: str | None = None,
+    ) -> TraceRunPageResponse:
+        return TraceRunPageResponse(
+            records=[
+                TraceRunResponse(
+                    traceId=trace_id or "trace-1",
+                    traceName="rag_chat",
+                    conversationId=conversation_id or "conv-1",
+                    taskId=task_id or "task-1",
+                    userId="1",
+                    status=status or "SUCCESS",
+                    durationMs=12,
+                ),
+            ],
+            total=1,
+            size=size,
+            current=current,
+            pages=1,
+        )
 
     async def get_run_detail(self, trace_id: str) -> TraceDetailResponse:
         return TraceDetailResponse(
-            run=TraceRunResponse(trace_id=trace_id, status="SUCCESS"),
+            run=TraceRunResponse(traceId=trace_id, status="SUCCESS"),
             nodes=[
                 TraceNodeResponse(
-                    node_id="node-1",
-                    node_name="stream_chat_pipeline",
-                    node_type="PIPELINE",
+                    traceId=trace_id,
+                    nodeId="node-1",
+                    nodeName="stream_chat_pipeline",
+                    nodeType="PIPELINE",
                     status="SUCCESS",
-                    duration_ms=12,
+                    durationMs=12,
                 ),
             ],
         )
+
+    async def list_nodes(self, trace_id: str) -> list[TraceNodeResponse]:
+        return [
+            TraceNodeResponse(
+                traceId=trace_id,
+                nodeId="node-1",
+                nodeName="stream_chat_pipeline",
+                nodeType="PIPELINE",
+                status="SUCCESS",
+                durationMs=12,
+            ),
+        ]
 
 
 async def override_current_user() -> User:
@@ -237,5 +264,5 @@ def test_trace_query_api() -> None:
     detail_response = client.get("/api/ragent/rag/traces/runs/trace-1")
 
     assert runs_response.status_code == 200
-    assert runs_response.json()["data"][0]["trace_id"] == "trace-1"
-    assert detail_response.json()["data"]["nodes"][0]["node_name"] == "stream_chat_pipeline"
+    assert runs_response.json()["data"]["records"][0]["traceId"] == "trace-1"
+    assert detail_response.json()["data"]["nodes"][0]["nodeName"] == "stream_chat_pipeline"
