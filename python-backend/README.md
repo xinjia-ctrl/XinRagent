@@ -2,7 +2,7 @@
 
 Ragent Python 后端是基于 FastAPI 的异步 API 服务，用于承接原 Ragent 项目的登录鉴权、知识库管理、文档入库、向量检索、SSE 流式聊天和 RAG Trace 查询能力。
 
-当前阶段重点是完成后端工程底座和 RAG 最小闭环，业务实现按《Python版本改造计划书.md》逐步迁移。
+当前阶段已完成与原版前端主要服务接口的对齐，覆盖登录鉴权、用户、会话聊天、知识库、文档分块、入库流水线、意图树、查询词映射、示例问题、Trace、仪表盘和系统设置。
 
 ## 功能特性
 
@@ -17,6 +17,10 @@ Ragent Python 后端是基于 FastAPI 的异步 API 服务，用于承接原 Rag
 - pgvector 全局向量检索通道
 - Markdown、TXT 文档上传、解析、分块与向量索引
 - 知识库、文档、分块和 RAG Trace 后台查询接口
+- 入库流水线、入库任务和任务节点管理接口
+- 意图树、查询词映射、示例问题后台管理接口
+- 后台仪表盘和系统设置查询接口
+- 前端接口路由覆盖测试和第十天联调验证脚本
 
 ## 技术栈
 
@@ -106,6 +110,14 @@ python -m pytest
 
 # 只运行 RAG 相关测试
 python -m pytest tests\test_rag_chat_api.py tests\test_rag_vector_chain.py
+
+# 从仓库根目录运行第十天联调验证
+cd D:\XinRagent
+powershell -ExecutionPolicy Bypass -File scripts\verify-day10.ps1
+
+# 只验证前端生产构建
+cd D:\XinRagent\frontend
+npm run build
 ```
 
 ## 项目结构
@@ -143,6 +155,8 @@ RAG 聊天：
 - `GET /api/ragent/rag/v3/chat?question=...`
 - `POST /api/ragent/rag/v3/chat`
 - `POST /api/ragent/rag/v3/stop`
+- `GET /api/ragent/rag/sample-questions`
+- `GET /api/ragent/rag/settings`
 
 知识库与文档：
 
@@ -152,13 +166,62 @@ RAG 聊天：
 - `DELETE /api/ragent/knowledge-base/{kb_id}`
 - `POST /api/ragent/knowledge-base/{kb_id}/docs/upload`
 - `GET /api/ragent/knowledge-base/{kb_id}/docs`
+- `GET /api/ragent/knowledge-base/docs/search`
 - `GET /api/ragent/knowledge-base/docs/{doc_id}`
+- `PUT /api/ragent/knowledge-base/docs/{doc_id}`
+- `POST /api/ragent/knowledge-base/docs/{doc_id}/chunk`
+- `PATCH /api/ragent/knowledge-base/docs/{doc_id}/enable`
+- `DELETE /api/ragent/knowledge-base/docs/{doc_id}`
 - `GET /api/ragent/knowledge-base/docs/{doc_id}/chunks`
+- `POST /api/ragent/knowledge-base/docs/{doc_id}/chunks`
+- `PUT /api/ragent/knowledge-base/docs/{doc_id}/chunks/{chunk_id}`
+- `DELETE /api/ragent/knowledge-base/docs/{doc_id}/chunks/{chunk_id}`
+- `PATCH /api/ragent/knowledge-base/docs/{doc_id}/chunks/{chunk_id}/enable`
+- `PATCH /api/ragent/knowledge-base/docs/{doc_id}/chunks/batch-enable`
+- `GET /api/ragent/knowledge-base/docs/{doc_id}/chunk-logs`
+
+入库流水线：
+
+- `GET /api/ragent/ingestion/pipelines`
+- `POST /api/ragent/ingestion/pipelines`
+- `GET /api/ragent/ingestion/pipelines/{pipeline_id}`
+- `PUT /api/ragent/ingestion/pipelines/{pipeline_id}`
+- `DELETE /api/ragent/ingestion/pipelines/{pipeline_id}`
+- `GET /api/ragent/ingestion/tasks`
+- `POST /api/ragent/ingestion/tasks`
+- `POST /api/ragent/ingestion/tasks/upload`
+- `GET /api/ragent/ingestion/tasks/{task_id}`
+- `GET /api/ragent/ingestion/tasks/{task_id}/nodes`
+
+RAG 管理：
+
+- `GET /api/ragent/intent-tree/trees`
+- `POST /api/ragent/intent-tree`
+- `PUT /api/ragent/intent-tree/{node_id}`
+- `DELETE /api/ragent/intent-tree/{node_id}`
+- `POST /api/ragent/intent-tree/batch/enable`
+- `POST /api/ragent/intent-tree/batch/disable`
+- `POST /api/ragent/intent-tree/batch/delete`
+- `GET /api/ragent/mappings`
+- `POST /api/ragent/mappings`
+- `PUT /api/ragent/mappings/{mapping_id}`
+- `DELETE /api/ragent/mappings/{mapping_id}`
+- `GET /api/ragent/sample-questions`
+- `POST /api/ragent/sample-questions`
+- `PUT /api/ragent/sample-questions/{question_id}`
+- `DELETE /api/ragent/sample-questions/{question_id}`
 
 Trace：
 
 - `GET /api/ragent/rag/traces/runs`
 - `GET /api/ragent/rag/traces/runs/{trace_id}`
+- `GET /api/ragent/rag/traces/runs/{trace_id}/nodes`
+
+后台仪表盘：
+
+- `GET /api/ragent/admin/dashboard/overview`
+- `GET /api/ragent/admin/dashboard/performance`
+- `GET /api/ragent/admin/dashboard/trends`
 
 ## 测试说明
 
@@ -169,7 +232,16 @@ cd D:\XinRagent\python-backend
 python -m pytest
 ```
 
+执行前后端联调验证：
+
+```powershell
+cd D:\XinRagent
+powershell -ExecutionPolicy Bypass -File scripts\verify-day10.ps1
+```
+
 测试中 AI 调用、流式聊天、文档入库和后台管理接口均使用 fake 或 mock 对象，避免依赖外部模型服务。
+
+`tests\test_frontend_contract_routes.py` 会检查原版前端服务依赖的核心接口是否已在 FastAPI 路由表注册。新增前端接口时，需要同步更新该测试，防止后端遗漏契约。
 
 如果 Windows 环境出现 `.pytest_cache` 权限 warning，只要测试结果为 passed，不影响当前验证。
 
