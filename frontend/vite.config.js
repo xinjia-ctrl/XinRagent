@@ -23,6 +23,36 @@ export default defineConfig(({ mode }) => {
                 secure: false
             }
         }
+    },
+    build: {
+        chunkSizeWarningLimit: 900,
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    react: ["react", "react-dom", "react-router-dom"],
+                    forms: ["@hookform/resolvers", "react-hook-form", "zod"],
+                    data: ["@tanstack/react-table", "date-fns", "react-virtuoso", "zustand"],
+                    ui: [
+                        "@radix-ui/react-alert-dialog",
+                        "@radix-ui/react-avatar",
+                        "@radix-ui/react-checkbox",
+                        "@radix-ui/react-dialog",
+                        "@radix-ui/react-dropdown-menu",
+                        "@radix-ui/react-label",
+                        "@radix-ui/react-progress",
+                        "@radix-ui/react-select",
+                        "@radix-ui/react-separator",
+                        "@radix-ui/react-slot",
+                        "@radix-ui/react-tabs",
+                        "@radix-ui/react-tooltip",
+                        "lucide-react"
+                    ],
+                    charts: ["recharts"],
+                    markdown: ["react-markdown", "remark-gfm"],
+                    syntax: ["react-syntax-highlighter"]
+                }
+            }
+        }
     }
     };
 });
