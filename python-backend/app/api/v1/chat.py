@@ -17,9 +17,12 @@ from app.infra_ai.chat import RoutingLLMService
 from app.infra_ai.config import default_chat_targets, default_embedding_targets
 from app.infra_ai.embedding import RoutingEmbeddingService
 from app.models import User
+from app.rag.intent import IntentResolver
+from app.rag.memory import ConversationMemoryService
 from app.rag.pipeline import StreamChatContext, StreamChatPipeline
+from app.rag.rewrite import QueryRewriteService
 from app.rag.retrieve import PgVectorStoreService
-from app.rag.retrieve.channels import VectorGlobalSearchChannel
+from app.rag.retrieve.channels import IntentDirectedSearchChannel, VectorGlobalSearchChannel
 from app.rag.retrieve.multi_channel_retrieval_engine import MultiChannelRetrievalEngine
 from app.rag.retrieve.retrieval_engine import RetrievalEngine
 from app.rag.stream import stream_task_manager
@@ -42,12 +45,30 @@ def get_retrieval_engine(
     embedding_service: RoutingEmbeddingService = Depends(get_embedding_service),
 ) -> RetrievalEngine:
     vector_store = PgVectorStoreService(session=session, embedding_service=embedding_service)
-    channel = VectorGlobalSearchChannel(vector_store)
-    return RetrievalEngine(MultiChannelRetrievalEngine([channel]))
+    return RetrievalEngine(
+        MultiChannelRetrievalEngine(
+            [
+                IntentDirectedSearchChannel(vector_store),
+                VectorGlobalSearchChannel(vector_store),
+            ],
+        ),
+    )
 
 
 def get_trace_service(session: AsyncSession = Depends(get_db_session)) -> TraceService:
     return TraceService(session)
+
+
+def get_memory_service(session: AsyncSession = Depends(get_db_session)) -> ConversationMemoryService:
+    return ConversationMemoryService(session)
+
+
+def get_query_rewrite_service(session: AsyncSession = Depends(get_db_session)) -> QueryRewriteService:
+    return QueryRewriteService(session)
+
+
+def get_intent_resolver(session: AsyncSession = Depends(get_db_session)) -> IntentResolver:
+    return IntentResolver(session)
 
 
 @router.get("/chat")
@@ -60,6 +81,9 @@ async def stream_chat_api(
     user: User = Depends(get_current_user),
     llm_service: RoutingLLMService = Depends(get_llm_service),
     retrieval_engine: RetrievalEngine = Depends(get_retrieval_engine),
+    memory_service: ConversationMemoryService = Depends(get_memory_service),
+    query_rewrite_service: QueryRewriteService = Depends(get_query_rewrite_service),
+    intent_resolver: IntentResolver = Depends(get_intent_resolver),
     trace_service: TraceService = Depends(get_trace_service),
 ) -> StreamingResponse:
     return _create_chat_stream(
@@ -71,6 +95,9 @@ async def stream_chat_api(
         user,
         llm_service,
         retrieval_engine,
+        memory_service,
+        query_rewrite_service,
+        intent_resolver,
         trace_service,
     )
 
@@ -81,9 +108,21 @@ async def stream_chat_post_api(
     user: User = Depends(get_current_user),
     llm_service: RoutingLLMService = Depends(get_llm_service),
     retrieval_engine: RetrievalEngine = Depends(get_retrieval_engine),
+    memory_service: ConversationMemoryService = Depends(get_memory_service),
+    query_rewrite_service: QueryRewriteService = Depends(get_query_rewrite_service),
+    intent_resolver: IntentResolver = Depends(get_intent_resolver),
     trace_service: TraceService = Depends(get_trace_service),
 ) -> StreamingResponse:
-    return _create_chat_stream(request, user, llm_service, retrieval_engine, trace_service)
+    return _create_chat_stream(
+        request,
+        user,
+        llm_service,
+        retrieval_engine,
+        memory_service,
+        query_rewrite_service,
+        intent_resolver,
+        trace_service,
+    )
 
 
 def _create_chat_stream(
@@ -91,6 +130,9 @@ def _create_chat_stream(
     user: User,
     llm_service: RoutingLLMService,
     retrieval_engine: RetrievalEngine | None,
+    memory_service: ConversationMemoryService | None,
+    query_rewrite_service: QueryRewriteService | None,
+    intent_resolver: IntentResolver | None,
     trace_service: TraceService | None,
 ) -> StreamingResponse:
     task_id = uuid4().hex
@@ -102,7 +144,18 @@ def _create_chat_stream(
         deep_thinking=request.deep_thinking,
     )
     queue: asyncio.Queue[dict] = asyncio.Queue()
-    task = asyncio.create_task(_run_pipeline(context, llm_service, retrieval_engine, trace_service, queue))
+    task = asyncio.create_task(
+        _run_pipeline(
+            context,
+            llm_service,
+            retrieval_engine,
+            memory_service,
+            query_rewrite_service,
+            intent_resolver,
+            trace_service,
+            queue,
+        ),
+    )
     stream_task_manager.register(task_id, task)
     return StreamingResponse(
         _event_stream(queue),
@@ -129,10 +182,19 @@ async def _run_pipeline(
     context: StreamChatContext,
     llm_service: RoutingLLMService,
     retrieval_engine: RetrievalEngine | None,
+    memory_service: ConversationMemoryService | None,
+    query_rewrite_service: QueryRewriteService | None,
+    intent_resolver: IntentResolver | None,
     trace_service: TraceService | None,
     queue: asyncio.Queue[dict],
 ) -> None:
-    pipeline = StreamChatPipeline(llm_service, retrieval_engine=retrieval_engine)
+    pipeline = StreamChatPipeline(
+        llm_service,
+        retrieval_engine=retrieval_engine,
+        memory_service=memory_service,
+        query_rewrite_service=query_rewrite_service,
+        intent_resolver=intent_resolver,
+    )
     trace_id = None
     started_at = perf_counter()
     try:
@@ -168,8 +230,8 @@ async def _run_pipeline(
                 "__event": "finish",
                 "conversationId": context.conversation_id,
                 "taskId": context.task_id,
-                "messageId": None,
-                "title": None,
+                "messageId": context.assistant_message_id,
+                "title": context.title,
             },
         )
     except asyncio.CancelledError:

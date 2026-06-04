@@ -22,8 +22,14 @@ class MultiChannelRetrievalEngine:
 
         channel_results = await asyncio.gather(
             *(channel.search(context) for channel in self.channels),
+            return_exceptions=True,
         )
-        chunks = [chunk for result in channel_results for chunk in result]
+        chunks = [
+            chunk
+            for result in channel_results
+            if not isinstance(result, Exception)
+            for chunk in result
+        ]
         chunks.sort(key=lambda item: item.score, reverse=True)
 
         for postprocessor in self.postprocessors:

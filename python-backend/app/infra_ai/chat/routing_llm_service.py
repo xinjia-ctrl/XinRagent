@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator, Callable, Sequence
 
+from app.core.exceptions import RagentException
 from app.infra_ai.chat.base import ChatChunk, ChatClient, ChatRequest, ChatResponse
 from app.infra_ai.chat.openai_style_client import OpenAIStyleChatClient
 from app.infra_ai.model_target import ModelTarget
@@ -28,8 +29,29 @@ class RoutingLLMService:
         return await self.executor.execute(self.targets, operation)
 
     async def stream(self, request: ChatRequest) -> AsyncIterator[ChatChunk]:
-        response = await self.complete(request)
-        yield ChatChunk(delta=response.content, finish_reason="stop", raw=response.raw)
+        last_error: Exception | None = None
+        for target in sorted(self.targets, key=lambda item: item.priority):
+            if not self.executor.health_store.can_call(target.name):
+                continue
+
+            client = self.client_factory(target)
+            routed_request = self._with_target_model(request, target)
+            yielded = False
+            try:
+                async for chunk in client.stream(routed_request):
+                    yielded = True
+                    yield chunk
+                self.executor.health_store.mark_success(target.name)
+                return
+            except Exception as exc:
+                self.executor.health_store.mark_failure(target.name)
+                last_error = exc
+                if yielded:
+                    raise
+                continue
+
+        detail = f": {last_error}" if last_error else ""
+        raise RagentException(message=f"所有模型流式调用失败{detail}", code="AI_REMOTE_ERROR", status_code=502)
 
     @staticmethod
     def _with_target_model(request: ChatRequest, target: ModelTarget) -> ChatRequest:

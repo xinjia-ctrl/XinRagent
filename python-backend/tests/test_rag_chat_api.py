@@ -5,10 +5,19 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_current_user
-from app.api.v1.chat import get_llm_service, get_retrieval_engine, get_trace_service
+from app.api.v1.chat import (
+    get_intent_resolver,
+    get_llm_service,
+    get_memory_service,
+    get_query_rewrite_service,
+    get_retrieval_engine,
+    get_trace_service,
+)
 from app.infra_ai.chat import ChatChunk, ChatRequest
 from app.main import create_app
 from app.models import User
+from app.rag.intent import IntentResolution
+from app.rag.rewrite import RewriteResult
 
 
 class FakeLLMService:
@@ -20,6 +29,31 @@ class FakeLLMService:
 class EmptyRetrievalEngine:
     async def retrieve(self, **_: object) -> list:
         return []
+
+
+class NoopMemoryService:
+    async def load_history(self, *_: object) -> list:
+        return []
+
+    async def append_user_message(self, *_: object) -> None:
+        return None
+
+    async def append_assistant_message(self, *_: object) -> None:
+        return None
+
+
+class NoopRewriteService:
+    async def rewrite_with_split(self, question: str, *_: object) -> RewriteResult:
+        return RewriteResult(
+            original_question=question,
+            rewritten_question=question,
+            sub_questions=[question],
+        )
+
+
+class NoopIntentResolver:
+    async def resolve(self, _: RewriteResult) -> IntentResolution:
+        return IntentResolution(matches=[])
 
 
 def authenticated_user() -> User:
@@ -37,6 +71,9 @@ def create_rag_test_client() -> TestClient:
     app.dependency_overrides[get_current_user] = override_current_user
     app.dependency_overrides[get_llm_service] = lambda: FakeLLMService()
     app.dependency_overrides[get_retrieval_engine] = lambda: EmptyRetrievalEngine()
+    app.dependency_overrides[get_memory_service] = lambda: NoopMemoryService()
+    app.dependency_overrides[get_query_rewrite_service] = lambda: NoopRewriteService()
+    app.dependency_overrides[get_intent_resolver] = lambda: NoopIntentResolver()
     app.dependency_overrides[get_trace_service] = lambda: None
     return TestClient(app)
 

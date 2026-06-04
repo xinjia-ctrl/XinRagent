@@ -1,10 +1,13 @@
 from collections.abc import AsyncIterator
 
 from app.core.config import settings
-from app.infra_ai.chat import ChatRequest, RoutingLLMService
+from app.infra_ai.chat import ChatMessage, ChatRequest, RoutingLLMService
+from app.rag.intent import IntentResolver
+from app.rag.memory import ConversationMemoryService
 from app.rag.pipeline.stream_chat_context import StreamChatContext
 from app.rag.prompt import PromptService
 from app.rag.retrieve.retrieval_engine import RetrievalEngine
+from app.rag.rewrite import QueryRewriteService, RewriteResult
 
 
 class StreamChatPipeline:
@@ -12,26 +15,136 @@ class StreamChatPipeline:
         self,
         llm_service: RoutingLLMService,
         retrieval_engine: RetrievalEngine | None = None,
+        memory_service: ConversationMemoryService | None = None,
+        query_rewrite_service: QueryRewriteService | None = None,
+        intent_resolver: IntentResolver | None = None,
         prompt_service: PromptService | None = None,
     ) -> None:
         self.llm_service = llm_service
         self.retrieval_engine = retrieval_engine
+        self.memory_service = memory_service
+        self.query_rewrite_service = query_rewrite_service or QueryRewriteService()
+        self.intent_resolver = intent_resolver or IntentResolver()
         self.prompt_service = prompt_service or PromptService()
 
     async def execute(self, context: StreamChatContext) -> AsyncIterator[str]:
+        context.history = await self._load_history(context)
+        await self._append_user_message(context)
+
+        context.rewrite_result = await self.query_rewrite_service.rewrite_with_split(
+            context.question,
+            context.history,
+        )
+        context.intent_resolution = await self.intent_resolver.resolve(context.rewrite_result)
+
+        if context.intent_resolution.guidance_prompt:
+            async for delta in self._stream_plain_answer(context, context.intent_resolution.guidance_prompt):
+                yield delta
+            return
+
+        if context.intent_resolution.is_system_only:
+            async for delta in self._stream_system_answer(context):
+                yield delta
+            return
+
         chunks = []
         if self.retrieval_engine is not None:
             chunks = await self.retrieval_engine.retrieve(
-                query=context.question,
+                query=context.rewrite_result.rewritten_question,
+                original_query=context.question,
+                intents=context.intent_resolution.knowledge_matches,
                 conversation_id=context.conversation_id,
                 user_id=context.user_id,
             )
+        context.retrieved_chunks = chunks
 
         request = ChatRequest(
-            messages=self.prompt_service.build_messages(context.question, chunks),
+            messages=self.prompt_service.build_messages(
+                context.question,
+                chunks,
+                history=context.history,
+                rewritten_question=context.rewrite_result.rewritten_question,
+                sub_questions=context.rewrite_result.sub_questions,
+                intents=context.intent_resolution.matches,
+            ),
             model=settings.ai_chat_default_model,
             stream=True,
+            temperature=0.0,
         )
+        answer_parts: list[str] = []
         async for chunk in self.llm_service.stream(request):
             if chunk.delta:
+                answer_parts.append(chunk.delta)
                 yield chunk.delta
+        await self._append_assistant_message(context, "".join(answer_parts))
+
+    async def _stream_plain_answer(
+        self,
+        context: StreamChatContext,
+        answer: str,
+    ) -> AsyncIterator[str]:
+        yield answer
+        await self._append_assistant_message(context, answer)
+
+    async def _stream_system_answer(self, context: StreamChatContext) -> AsyncIterator[str]:
+        assert context.rewrite_result is not None
+        assert context.intent_resolution is not None
+        custom_prompt = next(
+            (
+                intent.prompt_template
+                for intent in context.intent_resolution.system_matches
+                if intent.prompt_template
+            ),
+            None,
+        )
+        system_prompt = custom_prompt or "你是 Ragent Python 后端的 AI 助手，请直接回答系统类问题。"
+        messages = self.prompt_service.build_messages(
+            context.question,
+            [],
+            history=context.history,
+            rewritten_question=context.rewrite_result.rewritten_question,
+            intents=context.intent_resolution.matches,
+        )
+        messages[0] = ChatMessage(role="system", content=system_prompt)
+        request = ChatRequest(
+            messages=messages,
+            model=settings.ai_chat_default_model,
+            stream=True,
+            temperature=0.7,
+        )
+        answer_parts: list[str] = []
+        async for chunk in self.llm_service.stream(request):
+            if chunk.delta:
+                answer_parts.append(chunk.delta)
+                yield chunk.delta
+        await self._append_assistant_message(context, "".join(answer_parts))
+
+    async def _load_history(self, context: StreamChatContext):
+        if self.memory_service is None:
+            return []
+        return await self.memory_service.load_history(context.conversation_id, context.user_id)
+
+    async def _append_user_message(self, context: StreamChatContext) -> None:
+        if self.memory_service is None:
+            return
+        appended = await self.memory_service.append_user_message(
+            context.conversation_id,
+            context.user_id,
+            context.question,
+        )
+        if appended and appended.title:
+            context.title = appended.title
+
+    async def _append_assistant_message(self, context: StreamChatContext, answer: str) -> None:
+        if self.memory_service is None or not answer:
+            return
+        appended = await self.memory_service.append_assistant_message(
+            context.conversation_id,
+            context.user_id,
+            answer,
+        )
+        if appended is None:
+            return
+        context.assistant_message_id = appended.message_id
+        if appended.title:
+            context.title = appended.title
