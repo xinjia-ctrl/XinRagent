@@ -25,12 +25,19 @@ class SettingsService:
         embedding_targets = default_embedding_targets()
         rerank_targets = [
             ModelTarget(
-                name="bailian-rerank",
+                name="qwen3-rerank",
                 base_url=settings.ai_bailian_url,
                 api_key=settings.ai_bailian_api_key,
-                model=settings.ai_rerank_default_model,
-                priority=10,
+                model="qwen3-rerank",
+                priority=1,
                 provider="bailian",
+            ),
+            ModelTarget(
+                name="rerank-noop",
+                base_url="",
+                model="noop",
+                priority=100,
+                provider="noop",
             ),
         ]
         return SystemSettingsResponse(
@@ -72,7 +79,10 @@ class SettingsService:
                     "bailian": AiProviderSettings(
                         url=settings.ai_bailian_url,
                         apiKey=self._mask_key(settings.ai_bailian_api_key),
-                        endpoints={"chat": "/compatible-mode/v1/chat/completions", "embedding": "/v1/embeddings"},
+                        endpoints={
+                            "chat": "/compatible-mode/v1/chat/completions",
+                            "rerank": "/api/v1/services/rerank/text-rerank/text-rerank",
+                        },
                     ),
                     "siliconflow": AiProviderSettings(
                         url=settings.ai_siliconflow_url,
@@ -89,7 +99,13 @@ class SettingsService:
                 chat=ModelGroup(
                     defaultModel=settings.ai_chat_default_model,
                     deepThinkingModel=settings.ai_chat_default_model,
-                    candidates=[self._candidate(target, supports_thinking=True) for target in chat_targets],
+                    candidates=[
+                        self._candidate(
+                            target,
+                            supports_thinking=target.name in {"glm-4.7", "qwen3-max"},
+                        )
+                        for target in chat_targets
+                    ],
                 ),
                 embedding=ModelGroup(
                     defaultModel=settings.ai_embedding_default_model,

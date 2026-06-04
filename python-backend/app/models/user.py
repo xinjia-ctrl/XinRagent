@@ -11,7 +11,7 @@ class User(Base):
     __tablename__ = "t_user"
     __allow_unmapped__ = True
 
-    id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     password: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="user")

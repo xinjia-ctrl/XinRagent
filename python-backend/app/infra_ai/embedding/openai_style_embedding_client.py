@@ -14,6 +14,7 @@ class OpenAIStyleEmbeddingClient(EmbeddingClient):
             "model": request.model,
             "input": list(request.texts),
         }
+        payload.update(self.target.extra_body)
         if request.extra_body:
             payload.update(request.extra_body)
 
@@ -40,4 +41,4 @@ class OpenAIStyleEmbeddingClient(EmbeddingClient):
         return headers
 
     def _embedding_url(self) -> str:
-        return f"{self.target.base_url.rstrip('/')}/v1/embeddings"
+        return f"{self.target.base_url.rstrip('/')}/{self.target.embedding_path.lstrip('/')}"

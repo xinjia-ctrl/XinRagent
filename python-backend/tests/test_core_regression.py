@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_current_user
 from app.api.v1.chat import (
+    get_chat_queue_limiter,
     get_intent_resolver,
     get_llm_service,
     get_memory_service,
@@ -17,6 +18,7 @@ from app.infra_ai.chat import ChatChunk, ChatRequest
 from app.main import create_app
 from app.models import User
 from app.rag.intent import IntentResolution
+from app.rag.rate_limit import ChatQueueLimiter
 from app.rag.rewrite import RewriteResult
 
 
@@ -66,6 +68,7 @@ def create_regression_client() -> TestClient:
     app.dependency_overrides[get_query_rewrite_service] = lambda: NoopRewriteService()
     app.dependency_overrides[get_intent_resolver] = lambda: NoopIntentResolver()
     app.dependency_overrides[get_trace_service] = lambda: None
+    app.dependency_overrides[get_chat_queue_limiter] = lambda: ChatQueueLimiter.disabled()
     return TestClient(app)
 
 

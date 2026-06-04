@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from app.core.config import settings
 from app.db.session import AsyncSessionLocal, create_engine, get_db_engine
 
 
@@ -15,9 +16,13 @@ def test_create_engine_uses_asyncpg_driver() -> None:
 
 def test_global_engine_uses_configured_database_url() -> None:
     engine = get_db_engine()
+    configured_engine = create_engine(settings.database_url)
 
-    assert engine.url.drivername == "postgresql+asyncpg"
-    assert engine.url.database == "ragent"
+    try:
+        assert engine.url.drivername == configured_engine.url.drivername
+        assert engine.url.database == configured_engine.url.database
+    finally:
+        configured_engine.sync_engine.dispose()
 
 
 def test_session_factory_creates_async_session() -> None:

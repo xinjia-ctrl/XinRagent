@@ -53,6 +53,7 @@ class OpenAIStyleChatClient(ChatClient):
             "temperature": request.temperature,
             "stream": stream,
         }
+        payload.update(self.target.extra_body)
         if request.extra_body:
             payload.update(request.extra_body)
         return payload
@@ -64,7 +65,7 @@ class OpenAIStyleChatClient(ChatClient):
         return headers
 
     def _chat_url(self) -> str:
-        return f"{self.target.base_url.rstrip('/')}/v1/chat/completions"
+        return f"{self.target.base_url.rstrip('/')}/{self.target.chat_path.lstrip('/')}"
 
     @staticmethod
     def _message_to_dict(message: ChatMessage) -> dict[str, str]:
