@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     rag_default_dimension: int = 1536
     rag_default_top_k: int = 5
     rag_sse_timeout_ms: int = 300000
+    rag_queue_limit_enabled: bool = False
+    rag_queue_max_concurrency: int = 3
+    rag_queue_timeout_seconds: float = 30.0
+    rag_queue_poll_interval_seconds: float = 0.5
+    rag_queue_key_prefix: str = "ragent:rag:chat"
+    rag_queue_active_ttl_seconds: int = 360
 
     ingestion_storage_dir: str = "storage/uploads"
 

@@ -13,6 +13,7 @@ from app.ingestion.storage import LocalFileStorage
 from app.models import User
 from app.schemas.document import KnowledgeDocumentResponse
 from app.services.document_service import DocumentService
+from app.services.ingestion_service import IngestionService
 
 router = APIRouter(prefix="/knowledge-base", tags=["ingestion"])
 
@@ -75,15 +76,24 @@ async def upload_document_api(
             chunk_config=chunkConfig,
             pipeline_id=pipelineId,
         )
-    ingestion_result = await ingestion_engine.ingest(
-        IngestionContext(
-            kb_id=kb_id,
-            doc_id=stored_file.file_id,
-            file_name=stored_file.original_name,
-            file_path=stored_file.path,
-            file_type=stored_file.file_type,
-            user_id=str(user.id),
-        ),
+    pipeline_nodes = None
+    session = _get_session_from_engine(ingestion_engine)
+    if pipelineId and session is not None:
+        pipeline_nodes = (await IngestionService(session).get_pipeline(pipelineId)).nodes
+
+    context = IngestionContext(
+        kb_id=kb_id,
+        doc_id=stored_file.file_id,
+        file_name=stored_file.original_name,
+        file_path=stored_file.path,
+        file_type=stored_file.file_type,
+        user_id=str(user.id),
+        metadata={"pipelineId": pipelineId} if pipelineId else {},
+    )
+    ingestion_result = (
+        await ingestion_engine.ingest(context, pipeline_nodes=pipeline_nodes)
+        if pipeline_nodes is not None
+        else await ingestion_engine.ingest(context)
     )
     if document_service is not None:
         return success(
@@ -119,8 +129,10 @@ async def upload_document_api(
 
 
 def _get_document_service_from_engine(ingestion_engine: IngestionEngine) -> DocumentService | None:
+    session = _get_session_from_engine(ingestion_engine)
+    return DocumentService(session) if session is not None else None
+
+
+def _get_session_from_engine(ingestion_engine: IngestionEngine):
     indexer_node = getattr(ingestion_engine, "indexer_node", None)
-    session = getattr(indexer_node, "session", None)
-    if session is None:
-        return None
-    return DocumentService(session)
+    return getattr(indexer_node, "session", None)

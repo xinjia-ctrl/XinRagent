@@ -1,6 +1,7 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from functools import lru_cache
 from time import perf_counter
 from uuid import uuid4
 
@@ -10,16 +11,19 @@ from starlette.responses import StreamingResponse
 
 from app.api.deps import get_current_user
 from app.common.ids import generate_id
+from app.core.config import settings
 from app.core.exceptions import RagentException
 from app.core.responses import ApiResponse, success
 from app.db.session import get_db_session
 from app.infra_ai.chat import RoutingLLMService
 from app.infra_ai.config import default_chat_targets, default_embedding_targets
 from app.infra_ai.embedding import RoutingEmbeddingService
+from app.mcp import MCPService
 from app.models import User
 from app.rag.intent import IntentResolver
 from app.rag.memory import ConversationMemoryService
 from app.rag.pipeline import StreamChatContext, StreamChatPipeline
+from app.rag.rate_limit import ChatQueueLimiter, QueueStatus, RedisQueueBackend
 from app.rag.rewrite import QueryRewriteService
 from app.rag.retrieve import PgVectorStoreService
 from app.rag.retrieve.channels import IntentDirectedSearchChannel, VectorGlobalSearchChannel
@@ -52,6 +56,7 @@ def get_retrieval_engine(
                 VectorGlobalSearchChannel(vector_store),
             ],
         ),
+        mcp_service=MCPService(),
     )
 
 
@@ -71,6 +76,20 @@ def get_intent_resolver(session: AsyncSession = Depends(get_db_session)) -> Inte
     return IntentResolver(session)
 
 
+@lru_cache
+def get_chat_queue_limiter() -> ChatQueueLimiter:
+    if not settings.rag_queue_limit_enabled:
+        return ChatQueueLimiter.disabled()
+    return ChatQueueLimiter(
+        enabled=True,
+        backend=RedisQueueBackend(settings.redis_url, settings.rag_queue_key_prefix),
+        max_concurrency=settings.rag_queue_max_concurrency,
+        timeout_seconds=settings.rag_queue_timeout_seconds,
+        poll_interval_seconds=settings.rag_queue_poll_interval_seconds,
+        active_ttl_seconds=settings.rag_queue_active_ttl_seconds,
+    )
+
+
 @router.get("/chat")
 async def stream_chat_api(
     question: str = Query(..., min_length=1),
@@ -85,6 +104,7 @@ async def stream_chat_api(
     query_rewrite_service: QueryRewriteService = Depends(get_query_rewrite_service),
     intent_resolver: IntentResolver = Depends(get_intent_resolver),
     trace_service: TraceService = Depends(get_trace_service),
+    queue_limiter: ChatQueueLimiter = Depends(get_chat_queue_limiter),
 ) -> StreamingResponse:
     return _create_chat_stream(
         ChatQuery(
@@ -99,6 +119,7 @@ async def stream_chat_api(
         query_rewrite_service,
         intent_resolver,
         trace_service,
+        queue_limiter,
     )
 
 
@@ -112,6 +133,7 @@ async def stream_chat_post_api(
     query_rewrite_service: QueryRewriteService = Depends(get_query_rewrite_service),
     intent_resolver: IntentResolver = Depends(get_intent_resolver),
     trace_service: TraceService = Depends(get_trace_service),
+    queue_limiter: ChatQueueLimiter = Depends(get_chat_queue_limiter),
 ) -> StreamingResponse:
     return _create_chat_stream(
         request,
@@ -122,6 +144,7 @@ async def stream_chat_post_api(
         query_rewrite_service,
         intent_resolver,
         trace_service,
+        queue_limiter,
     )
 
 
@@ -134,6 +157,7 @@ def _create_chat_stream(
     query_rewrite_service: QueryRewriteService | None,
     intent_resolver: IntentResolver | None,
     trace_service: TraceService | None,
+    queue_limiter: ChatQueueLimiter,
 ) -> StreamingResponse:
     task_id = uuid4().hex
     context = StreamChatContext(
@@ -153,6 +177,7 @@ def _create_chat_stream(
             query_rewrite_service,
             intent_resolver,
             trace_service,
+            queue_limiter,
             queue,
         ),
     )
@@ -186,6 +211,7 @@ async def _run_pipeline(
     query_rewrite_service: QueryRewriteService | None,
     intent_resolver: IntentResolver | None,
     trace_service: TraceService | None,
+    queue_limiter: ChatQueueLimiter,
     queue: asyncio.Queue[dict],
 ) -> None:
     pipeline = StreamChatPipeline(
@@ -206,16 +232,36 @@ async def _run_pipeline(
                 conversation_id=context.conversation_id,
             )
         await queue.put({"__event": "meta", "conversationId": context.conversation_id, "taskId": context.task_id})
-        async for delta in pipeline.execute(context):
-            await queue.put(
-                {
-                    "__event": "message",
-                    "type": "response",
-                    "delta": delta,
-                    "conversationId": context.conversation_id,
-                    "taskId": context.task_id,
-                },
-            )
+        permit = await queue_limiter.acquire(
+            context.task_id,
+            on_status=lambda status: _put_queue_status(queue, context, status),
+        )
+        if not permit.acquired:
+            await _handle_queue_timeout(queue, context, permit.reason)
+            if trace_service is not None and trace_id is not None:
+                await trace_service.record_node(
+                    trace_id=trace_id,
+                    node_name="chat_queue_limiter",
+                    node_type="QUEUE_LIMITER",
+                    status="TIMEOUT",
+                    duration_ms=TraceService.elapsed_ms(started_at),
+                    error_message=permit.reason,
+                )
+                await trace_service.finish_run(trace_id, status="FAILED", error_message=permit.reason)
+            return
+        try:
+            async for delta in pipeline.execute(context):
+                await queue.put(
+                    {
+                        "__event": "message",
+                        "type": "response",
+                        "delta": delta,
+                        "conversationId": context.conversation_id,
+                        "taskId": context.task_id,
+                    },
+                )
+        finally:
+            await permit.release()
         if trace_service is not None and trace_id is not None:
             await trace_service.record_node(
                 trace_id=trace_id,
@@ -269,6 +315,52 @@ async def _run_pipeline(
     finally:
         await queue.put({"__event": "done"})
         await queue.put({"__event": "__end"})
+
+
+async def _put_queue_status(
+    queue: asyncio.Queue[dict],
+    context: StreamChatContext,
+    status: QueueStatus,
+) -> None:
+    await queue.put(
+        {
+            "__event": "queue",
+            "type": "queue",
+            "status": status.status,
+            "position": status.position,
+            "waitingSeconds": status.waiting_seconds,
+            "timeoutSeconds": status.timeout_seconds,
+            "maxConcurrency": status.max_concurrency,
+            "conversationId": context.conversation_id,
+            "taskId": context.task_id,
+        },
+    )
+
+
+async def _handle_queue_timeout(
+    queue: asyncio.Queue[dict],
+    context: StreamChatContext,
+    reason: str | None,
+) -> None:
+    await queue.put(
+        {
+            "__event": "message",
+            "type": "response",
+            "delta": "系统繁忙，请稍后重试。",
+            "conversationId": context.conversation_id,
+            "taskId": context.task_id,
+            "reason": reason,
+        },
+    )
+    await queue.put(
+        {
+            "__event": "finish",
+            "conversationId": context.conversation_id,
+            "taskId": context.task_id,
+            "messageId": None,
+            "title": None,
+        },
+    )
 
 
 async def _event_stream(queue: asyncio.Queue[dict]) -> AsyncIterator[str]:

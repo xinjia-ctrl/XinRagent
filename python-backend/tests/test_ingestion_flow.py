@@ -11,7 +11,7 @@ from app.api.v1.ingestion import get_file_storage, get_ingestion_engine
 from app.infra_ai.embedding import EmbeddingResponse
 from app.ingestion import IngestionContext, IngestionEngine, IngestionResult
 from app.ingestion.chunker import FixedSizeChunker
-from app.ingestion.nodes import ChunkerNode, IndexerNode, ParserNode
+from app.ingestion.nodes import ChunkerNode, IndexerNode, NodeConfig, ParserNode
 from app.ingestion.storage import StoredFile
 from app.main import create_app
 from app.models import User
@@ -50,6 +50,59 @@ async def test_ingestion_engine_parses_chunks_and_indexes_markdown() -> None:
         assert context.metadata["parser"] == "markdown"
         assert len(context.chunks) == 3
         assert session.execute.await_count == 6
+        session.flush.assert_awaited_once()
+    finally:
+        rmtree(runtime_dir, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_ingestion_engine_executes_configured_pipeline_chain_with_conditions() -> None:
+    runtime_dir = create_runtime_dir()
+    try:
+        source = runtime_dir / "intro.txt"
+        source.write_text("Ragent Python 可编排入库流水线", encoding="utf-8")
+        session = AsyncMock()
+        embedding_service = AsyncMock()
+        embedding_service.embed.return_value = EmbeddingResponse(vectors=[[0.1, 0.2]], model="embed")
+        engine = IngestionEngine(
+            parser_node=ParserNode(),
+            chunker_node=ChunkerNode(FixedSizeChunker(chunk_size=999, overlap=0)),
+            indexer_node=IndexerNode(session=session, embedding_service=embedding_service),
+        )
+        context = IngestionContext(
+            kb_id="kb-1",
+            doc_id="doc-1",
+            file_name="intro.txt",
+            file_path=source,
+            file_type="txt",
+            user_id="user-1",
+        )
+
+        result = await engine.ingest(
+            context,
+            pipeline_nodes=[
+                NodeConfig(node_id="parser-a", node_type="parser", next_node_id="skip-a"),
+                NodeConfig(
+                    node_id="skip-a",
+                    node_type="chunker",
+                    next_node_id="chunker-a",
+                    condition={"field": "file_type", "equals": "pdf"},
+                ),
+                NodeConfig(
+                    node_id="chunker-a",
+                    node_type="chunker",
+                    next_node_id="indexer-a",
+                    options={"chunkSize": 999, "overlap": 0},
+                ),
+                NodeConfig(node_id="indexer-a", node_type="indexer"),
+            ],
+        )
+
+        assert result.status == "indexed"
+        assert context.status == "completed"
+        assert [log["nodeId"] for log in context.logs] == ["parser-a", "skip-a", "chunker-a", "indexer-a"]
+        assert context.logs[1]["output"] == {"skipped": True}
+        assert len(context.chunks) == 1
         session.flush.assert_awaited_once()
     finally:
         rmtree(runtime_dir, ignore_errors=True)

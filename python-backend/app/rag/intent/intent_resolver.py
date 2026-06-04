@@ -23,7 +23,11 @@ class IntentMatch:
 
     @property
     def is_knowledge(self) -> bool:
-        return self.kind == 0
+        return self.kind == 0 and not self.mcp_tool_id
+
+    @property
+    def is_mcp(self) -> bool:
+        return bool(self.mcp_tool_id)
 
     @property
     def is_system(self) -> bool:
@@ -38,6 +42,10 @@ class IntentResolution:
     @property
     def knowledge_matches(self) -> list[IntentMatch]:
         return [match for match in self.matches if match.is_knowledge]
+
+    @property
+    def mcp_matches(self) -> list[IntentMatch]:
+        return [match for match in self.matches if match.is_mcp]
 
     @property
     def system_matches(self) -> list[IntentMatch]:

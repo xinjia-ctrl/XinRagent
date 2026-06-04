@@ -48,15 +48,23 @@ class StreamChatPipeline:
             return
 
         chunks = []
+        mcp_responses = []
         if self.retrieval_engine is not None:
-            chunks = await self.retrieval_engine.retrieve(
-                query=context.rewrite_result.rewritten_question,
-                original_query=context.question,
-                intents=context.intent_resolution.knowledge_matches,
-                conversation_id=context.conversation_id,
-                user_id=context.user_id,
-            )
+            retrieve_kwargs = {
+                "query": context.rewrite_result.rewritten_question,
+                "original_query": context.question,
+                "intents": [*context.intent_resolution.knowledge_matches, *context.intent_resolution.mcp_matches],
+                "conversation_id": context.conversation_id,
+                "user_id": context.user_id,
+            }
+            if hasattr(self.retrieval_engine, "retrieve_with_context"):
+                retrieval_result = await self.retrieval_engine.retrieve_with_context(**retrieve_kwargs)
+                chunks = retrieval_result.chunks
+                mcp_responses = retrieval_result.mcp_responses
+            else:
+                chunks = await self.retrieval_engine.retrieve(**retrieve_kwargs)
         context.retrieved_chunks = chunks
+        context.mcp_responses = mcp_responses
 
         request = ChatRequest(
             messages=self.prompt_service.build_messages(
@@ -66,6 +74,7 @@ class StreamChatPipeline:
                 rewritten_question=context.rewrite_result.rewritten_question,
                 sub_questions=context.rewrite_result.sub_questions,
                 intents=context.intent_resolution.matches,
+                mcp_responses=mcp_responses,
             ),
             model=settings.ai_chat_default_model,
             stream=True,

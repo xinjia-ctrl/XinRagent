@@ -1,6 +1,8 @@
 import pytest
 
 from app.core.exceptions import RagentException
+from app.infra_ai.chat import ChatChunk, ChatRequest
+from app.infra_ai.chat.routing_llm_service import RoutingLLMService
 from app.infra_ai.health_store import ModelHealthState, ModelHealthStore
 from app.infra_ai.model_target import ModelTarget
 from app.infra_ai.routing_executor import ModelRoutingExecutor
@@ -74,3 +76,35 @@ async def test_routing_executor_raises_when_all_targets_fail() -> None:
     assert exc_info.value.code == "AI_REMOTE_ERROR"
     assert executor.health_store.get("primary").state == ModelHealthState.OPEN
     assert executor.health_store.get("secondary").state == ModelHealthState.OPEN
+
+
+@pytest.mark.asyncio
+async def test_routing_llm_service_stream_uses_client_stream_and_fallback() -> None:
+    calls: list[str] = []
+
+    class FakeClient:
+        def __init__(self, model_target: ModelTarget) -> None:
+            self.model_target = model_target
+
+        async def complete(self, _: ChatRequest):
+            raise AssertionError("stream should not call complete")
+
+        async def stream(self, _: ChatRequest):
+            calls.append(self.model_target.name)
+            if self.model_target.name == "primary":
+                raise RuntimeError("primary stream failed")
+            yield ChatChunk(delta="真")
+            yield ChatChunk(delta="流式")
+
+    service = RoutingLLMService(
+        [target("primary", 10), target("secondary", 20)],
+        client_factory=FakeClient,
+    )
+
+    chunks = [
+        chunk.delta
+        async for chunk in service.stream(ChatRequest(messages=[], model="model", stream=True))
+    ]
+
+    assert calls == ["primary", "secondary"]
+    assert chunks == ["真", "流式"]

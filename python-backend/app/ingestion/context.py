@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -19,3 +20,6 @@ class IngestionContext:
     parsed_document: ParsedDocument | None = None
     chunks: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    status: str = "pending"
+    logs: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None

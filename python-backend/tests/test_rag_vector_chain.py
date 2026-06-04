@@ -4,12 +4,15 @@ from dataclasses import dataclass
 import pytest
 
 from app.infra_ai.chat import ChatChunk, ChatMessage, ChatRequest
+from app.mcp import MCPResponse, MCPService
 from app.rag.intent import IntentMatch, IntentResolution
 from app.rag.pipeline import StreamChatContext, StreamChatPipeline
 from app.rag.prompt import ContextFormatter, PromptService
 from app.rag.retrieve import RetrievedChunk
 from app.rag.retrieve.channels.base import SearchContext
 from app.rag.retrieve.channels.intent_directed_channel import IntentDirectedSearchChannel
+from app.rag.retrieve.multi_channel_retrieval_engine import MultiChannelRetrievalEngine
+from app.rag.retrieve.retrieval_engine import RetrievalEngine
 from app.rag.rewrite import RewriteResult
 
 
@@ -211,3 +214,43 @@ async def test_intent_directed_channel_searches_each_knowledge_intent() -> None:
     assert chunks[0].score == pytest.approx(0.6)
     assert chunks[0].metadata["intentName"] == "财务报销"
     assert chunks[0].metadata["channel"] == "intent_directed"
+
+
+@pytest.mark.asyncio
+async def test_retrieval_engine_merges_mcp_context() -> None:
+    class EmptyChannel:
+        name = "empty"
+
+        async def search(self, _: SearchContext) -> list[RetrievedChunk]:
+            return []
+
+    engine = RetrievalEngine(MultiChannelRetrievalEngine([EmptyChannel()]), mcp_service=MCPService())
+
+    result = await engine.retrieve_with_context(
+        query="帮我查上海未来2天天气预报",
+        intents=[
+            IntentMatch(
+                intent_id="intent-weather",
+                intent_code="weather",
+                name="天气查询",
+                confidence=0.9,
+                mcp_tool_id="weather_query",
+            ),
+        ],
+    )
+
+    assert result.chunks == []
+    assert result.mcp_responses[0].success is True
+    assert "上海" in result.mcp_context
+    assert "天气" in result.mcp_context
+
+
+def test_prompt_service_includes_mcp_context() -> None:
+    messages = PromptService().build_messages(
+        "上海天气怎么样？",
+        [],
+        mcp_responses=[MCPResponse.ok("weather_query", "上海今日晴")],
+    )
+
+    assert "MCP 工具调用结果" in messages[0].content
+    assert "上海今日晴" in messages[0].content
