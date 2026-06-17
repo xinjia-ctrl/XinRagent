@@ -16,9 +16,10 @@ from app.core.exceptions import RagentException
 from app.core.responses import ApiResponse, success
 from app.db.session import get_db_session
 from app.infra_ai.chat import RoutingLLMService
-from app.infra_ai.config import default_chat_targets, default_embedding_targets
+from app.infra_ai.config import default_chat_targets, default_embedding_targets, default_rerank_targets
 from app.infra_ai.embedding import RoutingEmbeddingService
-from app.mcp import MCPService
+from app.infra_ai.rerank import RoutingRerankService
+from app.mcp import MCPService, MCPToolRegistry
 from app.models import User
 from app.rag.intent import IntentResolver
 from app.rag.memory import ConversationMemoryService
@@ -44,9 +45,20 @@ def get_embedding_service() -> RoutingEmbeddingService:
     return RoutingEmbeddingService(default_embedding_targets())
 
 
+def get_rerank_service() -> RoutingRerankService:
+    return RoutingRerankService(default_rerank_targets())
+
+
+@lru_cache
+def get_mcp_service() -> MCPService:
+    return MCPService(registry=MCPToolRegistry())
+
+
 def get_retrieval_engine(
     session: AsyncSession = Depends(get_db_session),
     embedding_service: RoutingEmbeddingService = Depends(get_embedding_service),
+    rerank_service: RoutingRerankService = Depends(get_rerank_service),
+    mcp_service: MCPService = Depends(get_mcp_service),
 ) -> RetrievalEngine:
     vector_store = PgVectorStoreService(session=session, embedding_service=embedding_service)
     return RetrievalEngine(
@@ -56,7 +68,8 @@ def get_retrieval_engine(
                 VectorGlobalSearchChannel(vector_store),
             ],
         ),
-        mcp_service=MCPService(),
+        mcp_service=mcp_service,
+        rerank_service=rerank_service,
     )
 
 

@@ -3,6 +3,7 @@ from app.ingestion.context import IngestionContext
 from app.ingestion.nodes.base import NodeConfig, NodeResult
 from app.ingestion.parser.base import DocumentParser
 from app.ingestion.parser.markdown_parser import MarkdownParser
+from app.ingestion.parser.office_parser import DocxParser, PdfParser, XlsxParser
 from app.ingestion.parser.text_parser import TextParser
 
 
@@ -10,7 +11,7 @@ class ParserNode:
     node_type = "parser"
 
     def __init__(self, parsers: list[DocumentParser] | None = None) -> None:
-        self.parsers = parsers or [MarkdownParser(), TextParser()]
+        self.parsers = parsers or [MarkdownParser(), TextParser(), PdfParser(), DocxParser(), XlsxParser()]
 
     async def execute(self, context: IngestionContext, _: NodeConfig) -> NodeResult:
         parser = self._find_parser(context.file_type)

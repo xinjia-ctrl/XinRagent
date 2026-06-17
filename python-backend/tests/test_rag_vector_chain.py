@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import pytest
 
 from app.infra_ai.chat import ChatChunk, ChatMessage, ChatRequest
+from app.infra_ai.rerank import RerankDocument, RerankResponse
 from app.mcp import MCPResponse, MCPService
 from app.rag.intent import IntentMatch, IntentResolution
 from app.rag.pipeline import StreamChatContext, StreamChatPipeline
@@ -254,3 +255,35 @@ def test_prompt_service_includes_mcp_context() -> None:
 
     assert "MCP 工具调用结果" in messages[0].content
     assert "上海今日晴" in messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_retrieval_engine_reranks_multi_channel_candidates() -> None:
+    class FixedChannel:
+        name = "fixed"
+
+        async def search(self, _: SearchContext) -> list[RetrievedChunk]:
+            return [
+                RetrievedChunk(id="chunk-low", content="低相关", score=0.2),
+                RetrievedChunk(id="chunk-high", content="高相关", score=0.9),
+            ]
+
+    class FakeRerankService:
+        async def rerank(self, request):
+            assert request.top_n == 1
+            return RerankResponse(
+                documents=[
+                    RerankDocument(id="chunk-low", content="低相关", score=0.99),
+                ],
+                model="fake-rerank",
+            )
+
+    engine = RetrievalEngine(
+        MultiChannelRetrievalEngine([FixedChannel()]),
+        rerank_service=FakeRerankService(),
+    )
+
+    result = await engine.retrieve_with_context(query="问题", top_k=1)
+
+    assert [chunk.id for chunk in result.chunks] == ["chunk-low"]
+    assert result.chunks[0].score == pytest.approx(0.99)

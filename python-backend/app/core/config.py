@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     rag_queue_poll_interval_seconds: float = 0.5
     rag_queue_key_prefix: str = "ragent:rag:chat"
     rag_queue_active_ttl_seconds: int = 360
+    rag_mcp_servers: str = ""
 
     ingestion_storage_dir: str = "storage/uploads"
 

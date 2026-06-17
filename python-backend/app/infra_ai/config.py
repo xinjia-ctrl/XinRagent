@@ -64,3 +64,24 @@ def default_embedding_targets() -> list[ModelTarget]:
             extra_body={"dimensions": settings.rag_default_dimension},
         ),
     ]
+
+
+def default_rerank_targets() -> list[ModelTarget]:
+    return [
+        ModelTarget(
+            name="qwen3-rerank",
+            base_url=settings.ai_bailian_url,
+            api_key=settings.ai_bailian_api_key,
+            model=settings.ai_rerank_default_model,
+            priority=1,
+            provider="bailian",
+            rerank_path="/api/v1/services/rerank/text-rerank/text-rerank",
+        ),
+        ModelTarget(
+            name="rerank-noop",
+            base_url="",
+            model="noop",
+            priority=100,
+            provider="noop",
+        ),
+    ]

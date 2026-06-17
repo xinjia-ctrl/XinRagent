@@ -184,3 +184,32 @@ def create_runtime_dir() -> Path:
     path = Path("test_runtime") / uuid4().hex
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+@pytest.mark.asyncio
+async def test_parser_node_parses_docx_document() -> None:
+    from docx import Document
+
+    runtime_dir = create_runtime_dir()
+    try:
+        source = runtime_dir / "intro.docx"
+        document = Document()
+        document.add_paragraph("Ragent 支持复杂 Word 文档解析")
+        document.save(source)
+        context = IngestionContext(
+            kb_id="kb-1",
+            doc_id="doc-1",
+            file_name="intro.docx",
+            file_path=source,
+            file_type="docx",
+            user_id="user-1",
+        )
+
+        result = await ParserNode().execute(context, NodeConfig(node_id="parser", node_type="parser"))
+
+        assert result.success is True
+        assert context.parsed_document is not None
+        assert context.metadata["parser"] == "docx"
+        assert "复杂 Word 文档解析" in context.parsed_document.text
+    finally:
+        rmtree(runtime_dir, ignore_errors=True)
