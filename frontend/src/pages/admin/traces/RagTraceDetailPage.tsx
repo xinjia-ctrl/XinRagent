@@ -229,8 +229,9 @@ export function RagTraceDetailPage() {
       console.error(error);
       setDetail(null);
     } finally {
-      if (detailRequestRef.current !== requestId) return;
-      setDetailLoading(false);
+      if (detailRequestRef.current === requestId) {
+        setDetailLoading(false);
+      }
     }
   };
 
@@ -246,9 +247,9 @@ export function RagTraceDetailPage() {
 
   const selectedRun = detail?.run || null;
 
-  const timeline = useMemo(() => {
+  const timeline = useMemo<{ totalWindowMs: number; nodes: TimelineNode[] }>(() => {
     const nodes = detail?.nodes || [];
-    if (!nodes.length) return { totalWindowMs: 0, nodes: [] as any[] };
+    if (!nodes.length) return { totalWindowMs: 0, nodes: [] };
 
     const normalized = nodes.map((node) => {
       const startTs = toTimestamp(node.startTime);

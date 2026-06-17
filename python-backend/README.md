@@ -117,7 +117,7 @@ python -m pytest tests\test_rag_chat_api.py tests\test_rag_vector_chain.py
 cd D:\XinRagent
 powershell -ExecutionPolicy Bypass -File scripts\verify-day10.ps1
 
-# 只验证前端生产构建
+# 只验证前端类型、Lint 和生产构建
 cd D:\XinRagent\frontend
 npm run build
 ```

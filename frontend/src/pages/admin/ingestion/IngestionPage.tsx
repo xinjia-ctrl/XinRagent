@@ -809,13 +809,17 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     return source.map(buildNodeForm);
   };
 
-  const parseCondition = (raw: string) => {
+  const parseCondition = (raw: string): Record<string, unknown> | null => {
     const trimmed = raw.trim();
     if (!trimmed) return null;
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      return JSON.parse(trimmed);
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      throw new Error("节点条件必须是 JSON 对象");
     }
-    return trimmed;
+    return { expression: trimmed };
   };
 
   const parseParserRules = (raw: string) => {
@@ -927,7 +931,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
         return { ok: false as const, message: "节点类型不能为空" };
       }
       let settings: Record<string, unknown> | undefined;
-      let condition: unknown;
+      let condition: Record<string, unknown> | null = null;
       try {
         settings = buildSettings(node) as Record<string, unknown> | undefined;
         condition = parseCondition(node.condition);

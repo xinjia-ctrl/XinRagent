@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Check, FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X } from "lucide-react";
+import { FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X } from "lucide-react";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import * as z from "zod";
 
 import { cn } from "@/lib/utils";
@@ -1042,7 +1042,21 @@ const uploadSchema = z
     }
   });
 
-type UploadFormValues = z.infer<typeof uploadSchema>;
+interface UploadFormValues {
+  sourceType: "file" | "url";
+  sourceLocation: string;
+  scheduleEnabled: boolean;
+  scheduleCron: string;
+  processMode: "chunk" | "pipeline";
+  chunkStrategy: string;
+  pipelineId: string;
+  chunkSize: string;
+  overlapSize: string;
+  targetChars: string;
+  maxChars: string;
+  minChars: string;
+  overlapChars: string;
+}
 
 function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
   const [file, setFile] = useState<File | null>(null);
@@ -1057,7 +1071,7 @@ function UploadDialog({ open, onOpenChange, onSubmit }: UploadDialogProps) {
   const [maxFileSize, setMaxFileSize] = useState<number>(50 * 1024 * 1024);
 
   const form = useForm<UploadFormValues>({
-    resolver: zodResolver(uploadSchema),
+    resolver: zodResolver(uploadSchema) as Resolver<UploadFormValues>,
     defaultValues: {
       sourceType: "file",
       sourceLocation: "",

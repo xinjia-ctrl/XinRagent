@@ -1,6 +1,3 @@
-// @ts-nocheck
-/* eslint-disable */
-
 import * as React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,13 +20,13 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        code({ inline, className, children, node, ...props }) {
+        code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || "");
           const language = match?.[1] || "text";
           const value = String(children).replace(/\n$/, "");
 
-          // 判断是否为内联代码：inline 为 true 或者没有换行符
-          if (inline || !value.includes('\n')) {
+          // 当前 react-markdown 类型不暴露 inline 字段，按内容换行判断内联代码。
+          if (!value.includes("\n")) {
             return (
               <code
                 className={cn(
@@ -74,27 +71,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           );
         },
         img({ src, alt, ...props }) {
-          const [hasError, setHasError] = React.useState(false);
-
-          if (hasError) {
-            return (
-              <div className="my-3 flex items-center gap-2 text-sm text-[#999999]">
-                <ImageIcon className="h-4 w-4" />
-                <span>图片加载失败</span>
-              </div>
-            );
-          }
-
-          return (
-            <img
-              src={src}
-              alt=""
-              className="my-3 max-w-full rounded-lg"
-              onError={() => setHasError(true)}
-              loading="lazy"
-              {...props}
-            />
-          );
+          return <MarkdownImage src={src} alt={alt} {...props} />;
         },
         a({ children, ...props }) {
           return (
@@ -167,6 +144,34 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
     >
       {content}
     </ReactMarkdown>
+  );
+}
+
+function MarkdownImage({
+  src,
+  alt,
+  ...props
+}: React.ImgHTMLAttributes<HTMLImageElement>) {
+  const [hasError, setHasError] = React.useState(false);
+
+  if (hasError) {
+    return (
+      <div className="my-3 flex items-center gap-2 text-sm text-[#999999]">
+        <ImageIcon className="h-4 w-4" />
+        <span>图片加载失败</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt ?? ""}
+      className="my-3 max-w-full rounded-lg"
+      onError={() => setHasError(true)}
+      loading="lazy"
+      {...props}
+    />
   );
 }
 

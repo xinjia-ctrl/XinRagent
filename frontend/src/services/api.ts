@@ -1,14 +1,29 @@
-import axios from "axios";
+import axios, {
+  type AxiosInstance,
+  type AxiosRequestConfig,
+  type AxiosResponse
+} from "axios";
 import { toast } from "sonner";
 
 import { storage } from "@/utils/storage";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/ragent";
 
-export const api = axios.create({
+interface DataApi extends Omit<AxiosInstance, "get" | "delete" | "post" | "put" | "patch" | "request"> {
+  request<T = unknown, R = T, D = unknown>(config: AxiosRequestConfig<D>): Promise<R>;
+  get<T = unknown, R = T>(url: string, config?: AxiosRequestConfig): Promise<R>;
+  delete<T = unknown, R = T>(url: string, config?: AxiosRequestConfig): Promise<R>;
+  post<T = unknown, R = T, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>): Promise<R>;
+  put<T = unknown, R = T, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>): Promise<R>;
+  patch<T = unknown, R = T, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>): Promise<R>;
+}
+
+const axiosApi = axios.create({
   baseURL: API_BASE_URL,
   timeout: 60000
 });
+
+export const api = axiosApi as DataApi;
 
 export function setAuthToken(token: string | null) {
   if (token) {
@@ -18,7 +33,7 @@ export function setAuthToken(token: string | null) {
   }
 }
 
-api.interceptors.request.use((config) => {
+axiosApi.interceptors.request.use((config) => {
   const token = storage.getToken();
   if (token) {
     config.headers.Authorization = token;
@@ -26,8 +41,8 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-api.interceptors.response.use(
-  (response) => {
+axiosApi.interceptors.response.use(
+  (response): AxiosResponse["data"] => {
     const payload = response.data;
     if (payload && typeof payload === "object" && "code" in payload) {
       if (payload.code !== "0") {

@@ -19,30 +19,30 @@
 
 | 服务文件 | 方法 | 接口 | 状态 |
 | --- | --- | --- | --- |
-| `sessionService.ts` | `GET` | `/conversations` | 待对齐 |
-| `sessionService.ts` | `PUT` | `/conversations/{conversationId}` | 待对齐 |
-| `sessionService.ts` | `DELETE` | `/conversations/{conversationId}` | 待对齐 |
-| `sessionService.ts` | `GET` | `/conversations/{conversationId}/messages` | 待对齐 |
-| `chatService.ts` | `POST` | `/rag/v3/stop` | 待对齐 |
-| `chatStore.ts` | `GET` | `/rag/v3/chat` | 待对齐 |
+| `sessionService.ts` | `GET` | `/conversations` | 已对齐 |
+| `sessionService.ts` | `PUT` | `/conversations/{conversationId}` | 已对齐 |
+| `sessionService.ts` | `DELETE` | `/conversations/{conversationId}` | 已对齐 |
+| `sessionService.ts` | `GET` | `/conversations/{conversationId}/messages` | 已对齐 |
+| `chatService.ts` | `POST` | `/rag/v3/stop` | 已对齐 |
+| `chatStore.ts` | `GET` | `/rag/v3/chat` | 已对齐 |
 
 ## 第 3 批：知识库、文档与分块
 
 | 服务文件 | 接口范围 | 状态 |
 | --- | --- | --- |
-| `knowledgeService.ts` | 知识库、文档、分块 CRUD | 待对齐 |
-| `ingestionService.ts` | 入库任务、Pipeline、节点状态 | 待对齐 |
+| `knowledgeService.ts` | 知识库、文档、分块 CRUD | 已对齐 |
+| `ingestionService.ts` | 入库任务、Pipeline、节点状态 | 已对齐 |
 
 ## 第 4 批：后台管理
 
 | 服务文件 | 接口范围 | 状态 |
 | --- | --- | --- |
-| `dashboardService.ts` | 后台概览、性能、趋势 | 待对齐 |
-| `ragTraceService.ts` | Trace run、Trace detail、Trace node | 待对齐 |
-| `sampleQuestionService.ts` | 样例问题 CRUD | 待对齐 |
-| `intentTreeService.ts` | 意图树 CRUD 与批量操作 | 待对齐 |
-| `queryTermMappingService.ts` | 查询词映射 CRUD | 待对齐 |
-| `settingsService.ts` | RAG 系统设置 | 待对齐 |
+| `dashboardService.ts` | 后台概览、性能、趋势 | 已对齐 |
+| `ragTraceService.ts` | Trace run、Trace detail、Trace node | 已对齐 |
+| `sampleQuestionService.ts` | 样例问题 CRUD | 已对齐 |
+| `intentTreeService.ts` | 意图树 CRUD 与批量操作 | 已对齐 |
+| `queryTermMappingService.ts` | 查询词映射 CRUD | 已对齐 |
+| `settingsService.ts` | RAG 系统设置 | 已对齐 |
 
 ## 对齐原则
 
