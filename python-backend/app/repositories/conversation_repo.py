@@ -11,11 +11,11 @@ class ConversationRepository(BaseRepository[Conversation]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Conversation)
 
-    async def list_by_user(self, user_id: int, limit: int = 20) -> Sequence[Conversation]:
+    async def list_by_user(self, user_id: str, limit: int = 20) -> Sequence[Conversation]:
         statement = (
             select(Conversation)
             .where(Conversation.user_id == user_id)
-            .order_by(Conversation.updated_at.desc())
+            .order_by(Conversation.update_time.desc())
             .limit(limit)
         )
         result = await self.session.scalars(statement)
@@ -30,7 +30,7 @@ class MessageRepository(BaseRepository[Message]):
         statement = (
             select(Message)
             .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at.asc())
+            .order_by(Message.create_time.asc())
             .limit(limit)
         )
         result = await self.session.scalars(statement)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, SmallInteger, String
+from sqlalchemy import DateTime, SmallInteger, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -11,13 +11,20 @@ class User(Base):
     __tablename__ = "t_user"
     __allow_unmapped__ = True
 
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    id: Mapped[str] = mapped_column(String(20), primary_key=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     password: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="user")
     avatar: Mapped[str | None] = mapped_column(String(128))
-    create_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
-    update_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
+    create_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+    )
+    update_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
     deleted: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
 
     nickname: str | None = None

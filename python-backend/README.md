@@ -113,6 +113,12 @@ python -m pytest
 # 只运行 RAG 相关测试
 python -m pytest tests\test_rag_chat_api.py tests\test_rag_vector_chain.py
 
+# 查看数据库迁移头
+python -m alembic heads
+
+# 初始化或升级 PostgreSQL 数据库结构
+python -m alembic upgrade head
+
 # 从仓库根目录运行第十天联调验证
 cd D:\XinRagent
 powershell -ExecutionPolicy Bypass -File scripts\verify-day10.ps1
@@ -126,6 +132,7 @@ npm run build
 
 ```text
 python-backend/
+  alembic/          # Alembic 数据库迁移脚本
   app/
     api/            # FastAPI 路由与依赖
     common/         # 通用工具
@@ -142,6 +149,8 @@ python-backend/
   tests/            # pytest 测试
   pyproject.toml
 ```
+
+数据库初始化 SQL 位于 `resources/database/schema_pg.sql`，当前 Alembic 初始迁移会复用该 PostgreSQL 脚本作为权威建表来源。
 
 ## 接口概览
 
