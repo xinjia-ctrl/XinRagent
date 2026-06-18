@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import require_admin_user
 from app.core.responses import ApiResponse, success
 from app.db.session import get_db_session
 from app.models import User
@@ -23,7 +23,7 @@ async def list_trace_runs_api(
     conversationId: str | None = None,
     taskId: str | None = None,
     status: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     service: TraceService = Depends(get_trace_service),
 ) -> ApiResponse[TraceRunPageResponse]:
     return success(
@@ -41,7 +41,7 @@ async def list_trace_runs_api(
 @router.get("/runs/{trace_id}", response_model=ApiResponse[TraceDetailResponse])
 async def get_trace_run_api(
     trace_id: str,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     service: TraceService = Depends(get_trace_service),
 ) -> ApiResponse[TraceDetailResponse]:
     return success(await service.get_run_detail(trace_id))
@@ -50,7 +50,7 @@ async def get_trace_run_api(
 @router.get("/runs/{trace_id}/nodes", response_model=ApiResponse[list[TraceNodeResponse]])
 async def list_trace_nodes_api(
     trace_id: str,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     service: TraceService = Depends(get_trace_service),
 ) -> ApiResponse[list[TraceNodeResponse]]:
     return success(await service.list_nodes(trace_id))

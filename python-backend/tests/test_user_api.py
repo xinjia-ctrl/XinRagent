@@ -98,7 +98,7 @@ def test_users_page_api_rejects_non_admin_user() -> None:
     response = client.get("/api/ragent/users")
 
     assert response.status_code == 403
-    assert response.json() == {"code": "40301", "message": "无权访问用户管理", "data": None}
+    assert response.json() == {"code": "40301", "message": "无权访问后台管理", "data": None}
 
 
 def test_create_user_api_returns_created_user_id() -> None:

@@ -3,7 +3,7 @@ from math import ceil
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin_user
 from app.common.ids import generate_id
 from app.core.exceptions import RagentException
 from app.core.responses import ApiResponse, success
@@ -21,12 +21,6 @@ from app.schemas.user import (
 )
 
 router = APIRouter(tags=["user"])
-
-
-def require_admin_user(user: User = Depends(get_current_user)) -> User:
-    if user.role != "admin":
-        raise RagentException(message="无权访问用户管理", code="40301", status_code=403)
-    return user
 
 
 @router.get("/user/me", response_model=ApiResponse[CurrentUserResponse])

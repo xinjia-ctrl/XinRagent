@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import require_admin_user
 from app.core.responses import ApiResponse, success
 from app.db.session import get_db_session
 from app.ingestion.storage import LocalFileStorage
@@ -34,7 +34,7 @@ async def list_ingestion_pipelines_api(
     pageNo: int = Query(default=1, ge=1),
     pageSize: int = Query(default=10, ge=1, le=200),
     keyword: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[IngestionPipelinePageResponse]:
     return success(await service.list_pipelines(page_no=pageNo, page_size=pageSize, keyword=keyword))
@@ -43,7 +43,7 @@ async def list_ingestion_pipelines_api(
 @router.get("/pipelines/{pipeline_id}", response_model=ApiResponse[IngestionPipelineResponse])
 async def get_ingestion_pipeline_api(
     pipeline_id: str,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[IngestionPipelineResponse]:
     return success(await service.get_pipeline(pipeline_id))
@@ -52,7 +52,7 @@ async def get_ingestion_pipeline_api(
 @router.post("/pipelines", response_model=ApiResponse[IngestionPipelineResponse])
 async def create_ingestion_pipeline_api(
     request: IngestionPipelinePayload,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[IngestionPipelineResponse]:
     return success(await service.create_pipeline(request, str(user.id)))
@@ -62,7 +62,7 @@ async def create_ingestion_pipeline_api(
 async def update_ingestion_pipeline_api(
     pipeline_id: str,
     request: IngestionPipelinePayload,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[IngestionPipelineResponse]:
     return success(await service.update_pipeline(pipeline_id, request, str(user.id)))
@@ -71,7 +71,7 @@ async def update_ingestion_pipeline_api(
 @router.delete("/pipelines/{pipeline_id}", response_model=ApiResponse[None])
 async def delete_ingestion_pipeline_api(
     pipeline_id: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[None]:
     await service.delete_pipeline(pipeline_id, str(user.id))
@@ -83,7 +83,7 @@ async def list_ingestion_tasks_api(
     pageNo: int = Query(default=1, ge=1),
     pageSize: int = Query(default=10, ge=1, le=200),
     status: str | None = None,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[IngestionTaskPageResponse]:
     return success(await service.list_tasks(page_no=pageNo, page_size=pageSize, status=status))
@@ -93,7 +93,7 @@ async def list_ingestion_tasks_api(
 async def upload_ingestion_task_api(
     pipelineId: str = Query(...),
     file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin_user),
     storage: LocalFileStorage = Depends(get_ingestion_file_storage),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[IngestionResultResponse]:
@@ -111,7 +111,7 @@ async def upload_ingestion_task_api(
 @router.get("/tasks/{task_id}", response_model=ApiResponse[IngestionTaskResponse])
 async def get_ingestion_task_api(
     task_id: str,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[IngestionTaskResponse]:
     return success(await service.get_task(task_id))
@@ -120,7 +120,7 @@ async def get_ingestion_task_api(
 @router.get("/tasks/{task_id}/nodes", response_model=ApiResponse[list[IngestionTaskNodeResponse]])
 async def list_ingestion_task_nodes_api(
     task_id: str,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[list[IngestionTaskNodeResponse]]:
     return success(await service.list_task_nodes(task_id))
@@ -129,7 +129,7 @@ async def list_ingestion_task_nodes_api(
 @router.post("/tasks", response_model=ApiResponse[IngestionResultResponse])
 async def create_ingestion_task_api(
     request: IngestionTaskCreateRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin_user),
     service: IngestionService = Depends(get_ingestion_service),
 ) -> ApiResponse[IngestionResultResponse]:
     return success(await service.create_task(request, str(user.id)))
