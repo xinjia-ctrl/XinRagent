@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from time import perf_counter
 
 from app.core.config import settings
 from app.infra_ai.chat import ChatMessage, ChatRequest, RoutingLLMService
@@ -7,7 +8,7 @@ from app.rag.memory import ConversationMemoryService
 from app.rag.pipeline.stream_chat_context import StreamChatContext
 from app.rag.prompt import PromptService
 from app.rag.retrieve.retrieval_engine import RetrievalEngine
-from app.rag.rewrite import QueryRewriteService, RewriteResult
+from app.rag.rewrite import QueryRewriteService
 
 
 class StreamChatPipeline:
@@ -76,16 +77,27 @@ class StreamChatPipeline:
                 intents=context.intent_resolution.matches,
                 mcp_responses=mcp_responses,
             ),
-            model=settings.ai_chat_default_model,
+            model=self._chat_model(context),
             stream=True,
             temperature=0.0,
+            extra_body=self._chat_extra_body(context),
         )
         answer_parts: list[str] = []
+        thinking_parts: list[str] = []
+        thinking_started_at = perf_counter()
         async for chunk in self.llm_service.stream(request):
+            if context.deep_thinking and chunk.thinking_delta:
+                thinking_parts.append(chunk.thinking_delta)
             if chunk.delta:
                 answer_parts.append(chunk.delta)
                 yield chunk.delta
-        await self._append_assistant_message(context, "".join(answer_parts))
+        self._capture_thinking(context, thinking_parts, thinking_started_at)
+        await self._append_assistant_message(
+            context,
+            "".join(answer_parts),
+            thinking_content=context.thinking_content,
+            thinking_duration=context.thinking_duration,
+        )
 
     async def _stream_plain_answer(
         self,
@@ -117,16 +129,27 @@ class StreamChatPipeline:
         messages[0] = ChatMessage(role="system", content=system_prompt)
         request = ChatRequest(
             messages=messages,
-            model=settings.ai_chat_default_model,
+            model=self._chat_model(context),
             stream=True,
             temperature=0.7,
+            extra_body=self._chat_extra_body(context),
         )
         answer_parts: list[str] = []
+        thinking_parts: list[str] = []
+        thinking_started_at = perf_counter()
         async for chunk in self.llm_service.stream(request):
+            if context.deep_thinking and chunk.thinking_delta:
+                thinking_parts.append(chunk.thinking_delta)
             if chunk.delta:
                 answer_parts.append(chunk.delta)
                 yield chunk.delta
-        await self._append_assistant_message(context, "".join(answer_parts))
+        self._capture_thinking(context, thinking_parts, thinking_started_at)
+        await self._append_assistant_message(
+            context,
+            "".join(answer_parts),
+            thinking_content=context.thinking_content,
+            thinking_duration=context.thinking_duration,
+        )
 
     async def _load_history(self, context: StreamChatContext):
         if self.memory_service is None:
@@ -144,16 +167,51 @@ class StreamChatPipeline:
         if appended and appended.title:
             context.title = appended.title
 
-    async def _append_assistant_message(self, context: StreamChatContext, answer: str) -> None:
+    async def _append_assistant_message(
+        self,
+        context: StreamChatContext,
+        answer: str,
+        thinking_content: str | None = None,
+        thinking_duration: int | None = None,
+    ) -> None:
         if self.memory_service is None or not answer:
             return
-        appended = await self.memory_service.append_assistant_message(
-            context.conversation_id,
-            context.user_id,
-            answer,
-        )
+        if thinking_content:
+            appended = await self.memory_service.append_assistant_message(
+                context.conversation_id,
+                context.user_id,
+                answer,
+                thinking_content=thinking_content,
+                thinking_duration=thinking_duration,
+            )
+        else:
+            appended = await self.memory_service.append_assistant_message(
+                context.conversation_id,
+                context.user_id,
+                answer,
+            )
         if appended is None:
             return
         context.assistant_message_id = appended.message_id
         if appended.title:
             context.title = appended.title
+
+    @staticmethod
+    def _chat_model(context: StreamChatContext) -> str:
+        return settings.ai_deep_thinking_model if context.deep_thinking else settings.ai_chat_default_model
+
+    @staticmethod
+    def _chat_extra_body(context: StreamChatContext) -> dict | None:
+        if not context.deep_thinking:
+            return None
+        return {
+            "enable_thinking": True,
+            "thinking": {"type": "enabled"},
+        }
+
+    @staticmethod
+    def _capture_thinking(context: StreamChatContext, thinking_parts: list[str], started_at: float) -> None:
+        if not thinking_parts:
+            return
+        context.thinking_content = "".join(thinking_parts)
+        context.thinking_duration = int((perf_counter() - started_at) * 1000)

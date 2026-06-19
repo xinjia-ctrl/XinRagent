@@ -19,5 +19,7 @@ class StreamChatContext:
     intent_resolution: IntentResolution | None = None
     retrieved_chunks: list[RetrievedChunk] = field(default_factory=list)
     mcp_responses: list[MCPResponse] = field(default_factory=list)
+    thinking_content: str | None = None
+    thinking_duration: int | None = None
     assistant_message_id: str | None = None
     title: str | None = None

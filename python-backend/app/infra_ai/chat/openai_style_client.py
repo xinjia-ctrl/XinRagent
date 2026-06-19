@@ -86,5 +86,10 @@ class OpenAIStyleChatClient(ChatClient):
         return ChatChunk(
             delta=delta.get("content", ""),
             finish_reason=choice.get("finish_reason"),
+            thinking_delta=(
+                delta.get("reasoning_content")
+                or delta.get("reasoning")
+                or delta.get("thinking")
+            ),
             raw=body,
         )

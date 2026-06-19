@@ -3,10 +3,11 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.infra_ai.chat import ChatChunk, ChatMessage, ChatRequest
+from app.core.config import settings
+from app.infra_ai.chat import ChatChunk, ChatMessage, ChatRequest, ChatResponse
 from app.infra_ai.rerank import RerankDocument, RerankResponse
 from app.mcp import MCPResponse, MCPService
-from app.rag.intent import IntentMatch, IntentResolution
+from app.rag.intent import IntentMatch, IntentResolution, IntentResolver
 from app.rag.pipeline import StreamChatContext, StreamChatPipeline
 from app.rag.prompt import ContextFormatter, PromptService
 from app.rag.retrieve import RetrievedChunk
@@ -14,7 +15,7 @@ from app.rag.retrieve.channels.base import SearchContext
 from app.rag.retrieve.channels.intent_directed_channel import IntentDirectedSearchChannel
 from app.rag.retrieve.multi_channel_retrieval_engine import MultiChannelRetrievalEngine
 from app.rag.retrieve.retrieval_engine import RetrievalEngine
-from app.rag.rewrite import RewriteResult
+from app.rag.rewrite import QueryRewriteService, RewriteResult
 
 
 class FakeRetrievalEngine:
@@ -36,6 +37,16 @@ class CapturingLLMService:
     async def stream(self, request: ChatRequest) -> AsyncIterator[ChatChunk]:
         self.request = request
         yield ChatChunk(delta="已基于知识库回答")
+
+
+class JsonCompleteLLMService:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.request: ChatRequest | None = None
+
+    async def complete(self, request: ChatRequest) -> ChatResponse:
+        self.request = request
+        return ChatResponse(content=self.content, model=request.model)
 
 
 @dataclass
@@ -126,6 +137,58 @@ def test_prompt_service_includes_retrieval_context() -> None:
 
 
 @pytest.mark.asyncio
+async def test_query_rewrite_service_uses_llm_json_result() -> None:
+    llm_service = JsonCompleteLLMService(
+        '{"rewrittenQuestion":"Ragent 支持什么向量检索","subQuestions":["Ragent 支持什么向量检索"]}',
+    )
+    service = QueryRewriteService(llm_service=llm_service)
+
+    result = await service.rewrite_with_split(
+        "它支持什么检索？",
+        [ChatMessage(role="user", content="我们在讨论 Ragent")],
+    )
+
+    assert result.strategy == "llm"
+    assert result.rewritten_question == "Ragent 支持什么向量检索"
+    assert result.sub_questions == ["Ragent 支持什么向量检索"]
+    assert llm_service.request is not None
+    assert llm_service.request.extra_body == {"response_format": {"type": "json_object"}}
+
+
+@pytest.mark.asyncio
+async def test_intent_resolver_uses_llm_selected_intents() -> None:
+    class FixedIntentResolver(IntentResolver):
+        async def _load_nodes(self) -> list[dict]:
+            return [
+                {
+                    "id": "intent-1",
+                    "intent_code": "rag.vector",
+                    "name": "向量检索",
+                    "description": "回答向量检索能力",
+                    "examples": ["支持什么向量检索"],
+                    "kb_id": "kb-1",
+                    "kind": 0,
+                    "top_k": 3,
+                    "collection_name": "kb_default",
+                    "mcp_tool_id": None,
+                    "prompt_snippet": None,
+                    "prompt_template": None,
+                },
+            ]
+
+    llm_service = JsonCompleteLLMService(
+        '{"matches":[{"intentCode":"rag.vector","confidence":0.91,"reason":"命中向量检索"}]}',
+    )
+    resolver = FixedIntentResolver(llm_service=llm_service)
+
+    result = await resolver.resolve(RewriteResult("原问题", "Ragent 支持什么向量检索", ["Ragent 支持什么向量检索"]))
+
+    assert result.matches[0].intent_code == "rag.vector"
+    assert result.matches[0].confidence == pytest.approx(0.91)
+    assert result.matches[0].reason == "命中向量检索"
+
+
+@pytest.mark.asyncio
 async def test_stream_chat_pipeline_uses_retrieval_context_in_prompt() -> None:
     llm_service = CapturingLLMService()
     pipeline = StreamChatPipeline(
@@ -146,6 +209,63 @@ async def test_stream_chat_pipeline_uses_retrieval_context_in_prompt() -> None:
     system_message = llm_service.request.messages[0]
     assert "Ragent 支持基于 pgvector 的知识库检索。" in system_message.content
     assert "Ragent 文档" in system_message.content
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_pipeline_deep_thinking_uses_model_and_persists_thinking() -> None:
+    class ThinkingLLMService:
+        def __init__(self) -> None:
+            self.request: ChatRequest | None = None
+
+        async def stream(self, request: ChatRequest) -> AsyncIterator[ChatChunk]:
+            self.request = request
+            yield ChatChunk(delta="", thinking_delta="先分析问题")
+            yield ChatChunk(delta="最终回答")
+
+    class ThinkingMemoryService:
+        def __init__(self) -> None:
+            self.thinking_content: str | None = None
+            self.thinking_duration: int | None = None
+
+        async def load_history(self, *_: object) -> list[ChatMessage]:
+            return []
+
+        async def append_user_message(self, *_: object) -> None:
+            return None
+
+        async def append_assistant_message(
+            self,
+            _: str,
+            __: str,
+            content: str,
+            thinking_content: str | None = None,
+            thinking_duration: int | None = None,
+        ) -> SavedAssistant:
+            assert content == "最终回答"
+            self.thinking_content = thinking_content
+            self.thinking_duration = thinking_duration
+            return SavedAssistant(message_id="assistant-msg", title="深度思考")
+
+    llm_service = ThinkingLLMService()
+    memory_service = ThinkingMemoryService()
+    pipeline = StreamChatPipeline(llm_service=llm_service, memory_service=memory_service)
+    context = StreamChatContext(
+        question="请深度分析 Ragent",
+        conversation_id="conv-1",
+        task_id="task-1",
+        user_id="user-1",
+        deep_thinking=True,
+    )
+
+    deltas = [delta async for delta in pipeline.execute(context)]
+
+    assert deltas == ["最终回答"]
+    assert llm_service.request is not None
+    assert llm_service.request.model == settings.ai_deep_thinking_model
+    assert llm_service.request.extra_body == {"enable_thinking": True, "thinking": {"type": "enabled"}}
+    assert context.thinking_content == "先分析问题"
+    assert memory_service.thinking_content == "先分析问题"
+    assert memory_service.thinking_duration is not None
 
 
 @pytest.mark.asyncio

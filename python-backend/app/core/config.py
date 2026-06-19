@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ai_ollama_url: str = "http://localhost:11434"
 
     ai_chat_default_model: str = "qwen3-max"
+    ai_deep_thinking_model: str = "qwen3-max"
     ai_embedding_default_model: str = "qwen-emb-8b"
     ai_rerank_default_model: str = "qwen3-rerank"
 

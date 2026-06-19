@@ -108,3 +108,32 @@ async def test_routing_llm_service_stream_uses_client_stream_and_fallback() -> N
 
     assert calls == ["primary", "secondary"]
     assert chunks == ["真", "流式"]
+
+
+@pytest.mark.asyncio
+async def test_routing_llm_service_prefers_requested_model_target() -> None:
+    calls: list[str] = []
+
+    class FakeClient:
+        def __init__(self, model_target: ModelTarget) -> None:
+            self.model_target = model_target
+
+        async def complete(self, _: ChatRequest):
+            raise AssertionError("stream should not call complete")
+
+        async def stream(self, _: ChatRequest):
+            calls.append(self.model_target.name)
+            yield ChatChunk(delta=self.model_target.name)
+
+    service = RoutingLLMService(
+        [target("default", 0), target("thinking", 10)],
+        client_factory=FakeClient,
+    )
+
+    chunks = [
+        chunk.delta
+        async for chunk in service.stream(ChatRequest(messages=[], model="thinking", stream=True))
+    ]
+
+    assert calls == ["thinking"]
+    assert chunks == ["thinking"]

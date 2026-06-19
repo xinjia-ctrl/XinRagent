@@ -26,11 +26,11 @@ class RoutingLLMService:
             routed_request = self._with_target_model(request, target)
             return await client.complete(routed_request)
 
-        return await self.executor.execute(self.targets, operation)
+        return await self.executor.execute(self._ordered_targets(request), operation)
 
     async def stream(self, request: ChatRequest) -> AsyncIterator[ChatChunk]:
         last_error: Exception | None = None
-        for target in sorted(self.targets, key=lambda item: item.priority):
+        for target in self._ordered_targets(request):
             if not self.executor.health_store.can_call(target.name):
                 continue
 
@@ -62,3 +62,16 @@ class RoutingLLMService:
             stream=request.stream,
             extra_body=request.extra_body,
         )
+
+    def _ordered_targets(self, request: ChatRequest) -> list[ModelTarget]:
+        requested_model = (request.model or "").strip()
+        targets = sorted(self.targets, key=lambda item: item.priority)
+        preferred = [
+            target
+            for target in targets
+            if requested_model and requested_model in {target.name, target.model}
+        ]
+        if not preferred:
+            return targets
+        preferred_names = {target.name for target in preferred}
+        return [*preferred, *[target for target in targets if target.name not in preferred_names]]

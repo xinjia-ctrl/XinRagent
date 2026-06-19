@@ -29,6 +29,7 @@ class ChatResponse:
 class ChatChunk:
     delta: str
     finish_reason: str | None = None
+    thinking_delta: str | None = None
     raw: dict = field(default_factory=dict)
 
 

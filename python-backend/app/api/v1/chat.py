@@ -49,9 +49,8 @@ def get_rerank_service() -> RoutingRerankService:
     return RoutingRerankService(default_rerank_targets())
 
 
-@lru_cache
-def get_mcp_service() -> MCPService:
-    return MCPService(registry=MCPToolRegistry())
+def get_mcp_service(llm_service: RoutingLLMService = Depends(get_llm_service)) -> MCPService:
+    return MCPService(registry=MCPToolRegistry(), llm_service=llm_service)
 
 
 def get_retrieval_engine(
@@ -81,12 +80,18 @@ def get_memory_service(session: AsyncSession = Depends(get_db_session)) -> Conve
     return ConversationMemoryService(session)
 
 
-def get_query_rewrite_service(session: AsyncSession = Depends(get_db_session)) -> QueryRewriteService:
-    return QueryRewriteService(session)
+def get_query_rewrite_service(
+    session: AsyncSession = Depends(get_db_session),
+    llm_service: RoutingLLMService = Depends(get_llm_service),
+) -> QueryRewriteService:
+    return QueryRewriteService(session, llm_service=llm_service)
 
 
-def get_intent_resolver(session: AsyncSession = Depends(get_db_session)) -> IntentResolver:
-    return IntentResolver(session)
+def get_intent_resolver(
+    session: AsyncSession = Depends(get_db_session),
+    llm_service: RoutingLLMService = Depends(get_llm_service),
+) -> IntentResolver:
+    return IntentResolver(session, llm_service=llm_service)
 
 
 @lru_cache
@@ -291,6 +296,8 @@ async def _run_pipeline(
                 "taskId": context.task_id,
                 "messageId": context.assistant_message_id,
                 "title": context.title,
+                "thinkingContent": context.thinking_content,
+                "thinkingDuration": context.thinking_duration,
             },
         )
     except asyncio.CancelledError:

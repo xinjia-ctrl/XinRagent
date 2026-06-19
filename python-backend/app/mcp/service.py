@@ -1,6 +1,7 @@
 import asyncio
 
 from app.core.config import settings
+from app.infra_ai.chat import RoutingLLMService
 from app.mcp.client import HttpMCPClient
 from app.mcp.core import MCPResponse
 from app.mcp.parameter_extractor import MCPParameterExtractor
@@ -13,9 +14,10 @@ class MCPService:
         self,
         registry: MCPToolRegistry | None = None,
         extractor: MCPParameterExtractor | None = None,
+        llm_service: RoutingLLMService | None = None,
     ) -> None:
         self.registry = registry or MCPToolRegistry()
-        self.extractor = extractor or MCPParameterExtractor()
+        self.extractor = extractor or MCPParameterExtractor(llm_service=llm_service)
         self._remote_registered = False
 
     async def execute_for_intents(
@@ -62,7 +64,7 @@ class MCPService:
         if tool is None:
             return MCPResponse.error(intent.mcp_tool_id, "TOOL_NOT_FOUND", "MCP 工具不存在")
 
-        request = self.extractor.extract(question=question, tool=tool, intent=intent, user_id=user_id)
+        request = await self.extractor.extract(question=question, tool=tool, intent=intent, user_id=user_id)
         if tool.mcp_server_url:
             return await HttpMCPClient(tool.mcp_server_url).call_tool(request)
 

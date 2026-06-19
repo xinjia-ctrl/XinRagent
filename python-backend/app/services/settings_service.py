@@ -98,7 +98,7 @@ class SettingsService:
                 stream=AiStreamSettings(messageChunkSize=1),
                 chat=ModelGroup(
                     defaultModel=settings.ai_chat_default_model,
-                    deepThinkingModel=settings.ai_chat_default_model,
+                    deepThinkingModel=settings.ai_deep_thinking_model,
                     candidates=[
                         self._candidate(
                             target,
