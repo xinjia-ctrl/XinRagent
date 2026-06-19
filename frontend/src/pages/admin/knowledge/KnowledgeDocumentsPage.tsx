@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X } from "lucide-react";
 import { toast } from "sonner";
@@ -140,7 +140,7 @@ export function KnowledgeDocumentsPage() {
 
   const documents = pageData?.records || [];
 
-  const loadKnowledgeBase = async () => {
+  const loadKnowledgeBase = useCallback(async () => {
     if (!kbId) return;
     try {
       const data = await getKnowledgeBase(kbId);
@@ -149,9 +149,9 @@ export function KnowledgeDocumentsPage() {
       toast.error(getErrorMessage(error, "加载知识库失败"));
       console.error(error);
     }
-  };
+  }, [kbId]);
 
-  const loadDocuments = async (page = current, status = statusFilter, keywordValue = keyword) => {
+  const loadDocuments = useCallback(async (page = current, status = statusFilter, keywordValue = keyword) => {
     if (!kbId) return;
     setLoading(true);
     try {
@@ -168,15 +168,15 @@ export function KnowledgeDocumentsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [kbId, current, statusFilter, keyword]);
 
   useEffect(() => {
     loadKnowledgeBase();
-  }, [kbId]);
+  }, [loadKnowledgeBase]);
 
   useEffect(() => {
     loadDocuments();
-  }, [kbId, current, statusFilter, keyword]);
+  }, [loadDocuments]);
 
   useEffect(() => {
     if (detailTarget) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Activity, Clock3, Layers, RefreshCw, Search, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
@@ -40,9 +40,9 @@ export function RagTracePage() {
   const [pageData, setPageData] = useState<PageResult<RagTraceRun> | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const runs = pageData?.records || [];
+  const runs = useMemo(() => pageData?.records || [], [pageData?.records]);
 
-  const loadRuns = async (current = pageNo, nextTraceId = queryTraceId) => {
+  const loadRuns = useCallback(async (current = pageNo, nextTraceId = queryTraceId) => {
     const requestId = ++runsRequestRef.current;
     setLoading(true);
     try {
@@ -62,11 +62,11 @@ export function RagTracePage() {
         setLoading(false);
       }
     }
-  };
+  }, [pageNo, queryTraceId]);
 
   useEffect(() => {
     loadRuns();
-  }, [pageNo, queryTraceId]);
+  }, [loadRuns]);
 
   const handleSearch = () => {
     setPageNo(1);
