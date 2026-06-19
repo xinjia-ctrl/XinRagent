@@ -9,6 +9,7 @@ from app.core.exceptions import RagentException
 from app.infra_ai.embedding import EmbeddingRequest, RoutingEmbeddingService
 from app.ingestion.context import IngestionContext
 from app.ingestion.nodes.base import NodeConfig, NodeResult
+from app.ingestion.nodes.text_enrichment import json_safe_metadata
 
 
 class IndexerNode:
@@ -18,20 +19,27 @@ class IndexerNode:
         self.session = session
         self.embedding_service = embedding_service
 
-    async def execute(self, context: IngestionContext, _: NodeConfig) -> NodeResult:
+    async def execute(self, context: IngestionContext, config: NodeConfig) -> NodeResult:
         if not context.chunks:
             return NodeResult(node_type=self.node_type, success=True, message="indexed:0")
 
+        embedding_model = str(
+            config.options.get("embeddingModel")
+            or config.options.get("embedding_model")
+            or context.metadata.get("embedding_model")
+            or "",
+        )
         response = await self.embedding_service.embed(
-            EmbeddingRequest(texts=context.chunks, model=context.metadata.get("embedding_model", "")),
+            EmbeddingRequest(texts=context.chunks, model=embedding_model),
         )
         if len(response.vectors) != len(context.chunks):
             raise RagentException(message="Embedding 返回数量与分块数量不一致", code="INGESTION_EMBEDDING_MISMATCH")
 
+        metadata_fields = self._metadata_fields(config.options.get("metadataFields"))
         for index, (chunk, vector) in enumerate(zip(context.chunks, response.vectors, strict=True)):
             chunk_id = generate_id()
             await self._insert_chunk(context, chunk_id, index, chunk)
-            await self._insert_vector(context, chunk_id, chunk, vector)
+            await self._insert_vector(context, chunk_id, index, chunk, vector, metadata_fields)
 
         await self.session.flush()
         return NodeResult(node_type=self.node_type, success=True, message=f"indexed:{len(context.chunks)}")
@@ -67,8 +75,10 @@ class IndexerNode:
         self,
         context: IngestionContext,
         chunk_id: str,
+        index: int,
         content: str,
         vector: list[float],
+        metadata_fields: list[str],
     ) -> None:
         await self.session.execute(
             text(
@@ -80,17 +90,39 @@ class IndexerNode:
             {
                 "id": chunk_id,
                 "content": content,
-                "metadata": json.dumps(
-                    {
-                        "kbId": context.kb_id,
-                        "docId": context.doc_id,
-                        "fileName": context.file_name,
-                    },
-                    ensure_ascii=False,
-                ),
+                "metadata": json.dumps(self._vector_metadata(context, index, metadata_fields), ensure_ascii=False),
                 "embedding": self._vector_literal(vector),
             },
         )
+
+    def _vector_metadata(self, context: IngestionContext, index: int, metadata_fields: list[str]) -> dict:
+        base_metadata = {
+            "kbId": context.kb_id,
+            "docId": context.doc_id,
+            "fileName": context.file_name,
+            "chunkIndex": index,
+        }
+        source_metadata = self._select_metadata(context.metadata, metadata_fields)
+        chunk_metadata = context.chunk_metadata[index] if index < len(context.chunk_metadata) else {}
+        return json_safe_metadata({**base_metadata, **source_metadata, **chunk_metadata})
+
+    @staticmethod
+    def _select_metadata(metadata: dict, metadata_fields: list[str]) -> dict:
+        if metadata_fields:
+            return {field: metadata[field] for field in metadata_fields if field in metadata}
+        return {
+            key: value
+            for key, value in metadata.items()
+            if key not in {"credentials"} and not key.lower().endswith("content")
+        }
+
+    @staticmethod
+    def _metadata_fields(value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return [item.strip() for item in str(value).split(",") if item.strip()]
 
     @staticmethod
     def _vector_literal(vector: list[float]) -> str:

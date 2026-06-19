@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from fastapi import UploadFile
 
@@ -47,3 +48,25 @@ class LocalFileStorage:
             file_size=size,
             path=target_path,
         )
+
+    def prepare_remote_source(self, kb_id: str, source_location: str, file_name: str | None = None) -> StoredFile:
+        file_id = generate_id()
+        original_name = file_name or self._file_name_from_url(source_location) or f"{file_id}.txt"
+        suffix = Path(original_name).suffix.lower() or ".txt"
+        if not Path(original_name).suffix:
+            original_name = f"{original_name}{suffix}"
+        target_dir = self.base_dir / kb_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / f"{file_id}{suffix}"
+        return StoredFile(
+            file_id=file_id,
+            original_name=original_name,
+            file_type=suffix.removeprefix("."),
+            file_size=0,
+            path=target_path,
+        )
+
+    @staticmethod
+    def _file_name_from_url(source_location: str) -> str | None:
+        parsed_name = Path(unquote(urlparse(source_location).path)).name
+        return parsed_name or None

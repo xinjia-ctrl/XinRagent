@@ -182,6 +182,9 @@ class DocumentService:
         status: str,
         chunk_count: int,
         user_id: str,
+        file_url: str | None = None,
+        file_type: str | None = None,
+        file_size: int | None = None,
     ) -> KnowledgeDocumentResponse:
         await self.session.execute(
             text(
@@ -189,12 +192,23 @@ class DocumentService:
                 UPDATE t_knowledge_document
                 SET status = :status,
                     chunk_count = :chunk_count,
+                    file_url = COALESCE(:file_url, file_url),
+                    file_type = COALESCE(:file_type, file_type),
+                    file_size = COALESCE(:file_size, file_size),
                     updated_by = :user_id,
                     update_time = CURRENT_TIMESTAMP
                 WHERE id = :doc_id AND deleted = 0
                 """,
             ),
-            {"doc_id": doc_id, "status": status, "chunk_count": chunk_count, "user_id": user_id},
+            {
+                "doc_id": doc_id,
+                "status": status,
+                "chunk_count": chunk_count,
+                "file_url": file_url,
+                "file_type": file_type,
+                "file_size": file_size,
+                "user_id": user_id,
+            },
         )
         await self.session.commit()
         return await self.get_document(doc_id)

@@ -79,12 +79,12 @@ class KnowledgeService:
             ChunkStrategyOption(
                 value="fixed_size",
                 label="固定长度分块",
-                defaultConfig={"chunkSize": 800, "overlap": 100},
+                defaultConfig={"chunkSize": 800, "overlapSize": 100},
             ),
             ChunkStrategyOption(
-                value="markdown_heading",
-                label="Markdown 标题分块",
-                defaultConfig={"maxChunkSize": 1200, "overlap": 100},
+                value="structure_aware",
+                label="结构感知分块",
+                defaultConfig={"targetChars": 1400, "maxChars": 1800, "minChars": 600, "overlapChars": 0},
             ),
         ]
 

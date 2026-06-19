@@ -4,7 +4,17 @@ from typing import Any
 
 from app.core.exceptions import RagentException
 from app.ingestion.context import IngestionContext
-from app.ingestion.nodes import ChunkerNode, IndexerNode, IngestionNode, NodeConfig, NodeResult, ParserNode
+from app.ingestion.nodes import (
+    ChunkerNode,
+    EnhancerNode,
+    EnricherNode,
+    FetcherNode,
+    IndexerNode,
+    IngestionNode,
+    NodeConfig,
+    NodeResult,
+    ParserNode,
+)
 
 
 @dataclass(frozen=True)
@@ -20,13 +30,22 @@ class IngestionEngine:
         parser_node: ParserNode,
         chunker_node: ChunkerNode,
         indexer_node: IndexerNode,
+        fetcher_node: FetcherNode | None = None,
+        enhancer_node: EnhancerNode | None = None,
+        enricher_node: EnricherNode | None = None,
     ) -> None:
+        self.fetcher_node = fetcher_node or FetcherNode()
         self.parser_node = parser_node
+        self.enhancer_node = enhancer_node or EnhancerNode()
         self.chunker_node = chunker_node
+        self.enricher_node = enricher_node or EnricherNode()
         self.indexer_node = indexer_node
         self.node_map: dict[str, IngestionNode] = {
+            self.fetcher_node.node_type: self.fetcher_node,
             parser_node.node_type: parser_node,
+            self.enhancer_node.node_type: self.enhancer_node,
             chunker_node.node_type: chunker_node,
+            self.enricher_node.node_type: self.enricher_node,
             indexer_node.node_type: indexer_node,
         }
 
@@ -38,18 +57,11 @@ class IngestionEngine:
         if pipeline_nodes:
             await self.execute_pipeline(self._normalize_nodes(pipeline_nodes), context)
         else:
-            await self.execute_pipeline(
-                [
-                    NodeConfig(node_id="parser", node_type="parser", next_node_id="chunker"),
-                    NodeConfig(node_id="chunker", node_type="chunker", next_node_id="indexer"),
-                    NodeConfig(node_id="indexer", node_type="indexer"),
-                ],
-                context,
-            )
+            await self.execute_pipeline(self._default_pipeline(context), context)
         return IngestionResult(
             doc_id=context.doc_id,
             chunk_count=len(context.chunks),
-            status="indexed",
+            status="indexed" if context.status == "completed" else context.status,
         )
 
     async def execute_pipeline(self, nodes: list[NodeConfig], context: IngestionContext) -> IngestionContext:
@@ -168,3 +180,31 @@ class IngestionEngine:
                 ),
             )
         return normalized
+
+    @staticmethod
+    def _default_pipeline(context: IngestionContext) -> list[NodeConfig]:
+        raw_chunk_options = context.metadata.get("chunkConfig") or {}
+        chunk_options = dict(raw_chunk_options) if isinstance(raw_chunk_options, dict) else {}
+        if context.metadata.get("chunkStrategy"):
+            chunk_options["strategy"] = context.metadata["chunkStrategy"]
+        return [
+            NodeConfig(node_id="fetcher", node_type="fetcher", next_node_id="parser"),
+            NodeConfig(node_id="parser", node_type="parser", next_node_id="enhancer"),
+            NodeConfig(
+                node_id="enhancer",
+                node_type="enhancer",
+                next_node_id="chunker",
+                options={"tasks": [{"type": "metadata"}, {"type": "keywords"}]},
+            ),
+            NodeConfig(node_id="chunker", node_type="chunker", next_node_id="enricher", options=chunk_options),
+            NodeConfig(
+                node_id="enricher",
+                node_type="enricher",
+                next_node_id="indexer",
+                options={
+                    "attachDocumentMetadata": True,
+                    "tasks": [{"type": "metadata"}, {"type": "keywords"}, {"type": "summary"}],
+                },
+            ),
+            NodeConfig(node_id="indexer", node_type="indexer"),
+        ]
