@@ -1,0 +1,144 @@
+name: xinragent-python-infra
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: xinragent-postgres
+    environment:
+      POSTGRES_DB: ragent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: xinragent-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+
+  rmqnamesrv:
+    image: apache/rocketmq:5.2.0
+    container_name: xinragent-rmqnamesrv
+    ports:
+      - "9876:9876"
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx400m"
+    command: sh mqnamesrv
+    restart: unless-stopped
+
+  rmqbroker:
+    image: apache/rocketmq:5.2.0
+    container_name: xinragent-rmqbroker
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+    environment:
+      NAMESRV_ADDR: "rmqnamesrv:9876"
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m"
+    depends_on:
+      - rmqnamesrv
+    command:
+      - sh
+      - -c
+      - |
+        cat > /home/rocketmq/rocketmq-5.2.0/conf/broker.conf << EOF
+        brokerClusterName = DefaultCluster
+        brokerName = broker-a
+        brokerId = 0
+        deleteWhen = 04
+        fileReservedTime = 48
+        brokerRole = ASYNC_MASTER
+        flushDiskType = ASYNC_FLUSH
+        brokerIP1 = 127.0.0.1
+        timerMaxDelaySec = 31622400
+        EOF
+        sh mqbroker --enable-proxy -c /home/rocketmq/rocketmq-5.2.0/conf/broker.conf
+    restart: unless-stopped
+
+  rocketmq-dashboard:
+    image: apacherocketmq/rocketmq-dashboard:2.1.0
+    container_name: xinragent-rocketmq-dashboard
+    ports:
+      - "8082:8080"
+    environment:
+      JAVA_OPTS: >-
+        -Xms256m -Xmx512m
+        -Drocketmq.config.enableDashBoardCollect=false
+        -Drocketmq.namesrv.addr=rmqnamesrv:9876
+    depends_on:
+      - rmqbroker
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: xinragent-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.18
+    container_name: xinragent-etcd
+    command: >
+      etcd
+      -advertise-client-urls=http://etcd:2379
+      -listen-client-urls http://0.0.0.0:2379
+      --data-dir /etcd
+    volumes:
+      - etcd-data:/etcd
+    restart: unless-stopped
+
+  milvus:
+    image: milvusdb/milvus:v2.6.6
+    container_name: xinragent-milvus
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: minioadmin
+      MINIO_SECRET_ACCESS_KEY: minioadmin
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus-data:/var/lib/milvus
+    depends_on:
+      - etcd
+      - minio
+    restart: unless-stopped
+
+  attu:
+    image: zilliz/attu:v2.6.3
+    container_name: xinragent-attu
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "8000:3000"
+    depends_on:
+      - milvus
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  etcd-data:
+  milvus-data:

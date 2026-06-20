@@ -1,11 +1,11 @@
-from app.rag.retrieve import PgVectorStoreService, RetrievedChunk
+from app.rag.retrieve import RetrievedChunk, VectorStoreService
 from app.rag.retrieve.channels.base import SearchContext, SearchChannel
 
 
 class VectorGlobalSearchChannel(SearchChannel):
     name = "vector_global"
 
-    def __init__(self, vector_store: PgVectorStoreService) -> None:
+    def __init__(self, vector_store: VectorStoreService) -> None:
         self.vector_store = vector_store
 
     async def search(self, context: SearchContext) -> list[RetrievedChunk]:

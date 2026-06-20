@@ -7,6 +7,7 @@ from app.models.ingestion import (
     IngestionTask,
     IngestionTaskNode,
 )
+from app.models.infra import TaskOutbox
 from app.models.knowledge import (
     KnowledgeBase,
     KnowledgeChunk,
@@ -42,5 +43,6 @@ __all__ = [
     "RagTraceNode",
     "RagTraceRun",
     "SampleQuestion",
+    "TaskOutbox",
     "User",
 ]

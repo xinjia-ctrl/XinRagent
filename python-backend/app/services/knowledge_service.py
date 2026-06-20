@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.ids import generate_id
 from app.core.config import settings
 from app.core.exceptions import RagentException
+from app.rag.retrieve import VectorSpaceManager, create_vector_space_manager
 from app.schemas.knowledge import (
     ChunkStrategyOption,
     DeleteResponse,
@@ -17,8 +18,13 @@ from app.schemas.knowledge import (
 
 
 class KnowledgeService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        vector_space_manager: VectorSpaceManager | None = None,
+    ) -> None:
         self.session = session
+        self.vector_space_manager = vector_space_manager or create_vector_space_manager()
 
     async def list_knowledge_bases(
         self,
@@ -114,6 +120,10 @@ class KnowledgeService:
                 "user_id": user_id,
             },
         )
+        await self.vector_space_manager.ensure_collection(
+            collection_name,
+            settings.rag_default_dimension,
+        )
         await self.session.commit()
         return KnowledgeBaseResponse(
             id=kb_id,
@@ -153,6 +163,11 @@ class KnowledgeService:
                 "user_id": user_id,
             },
         )
+        if collection_name != current["collection_name"]:
+            await self.vector_space_manager.ensure_collection(
+                collection_name,
+                settings.rag_default_dimension,
+            )
         await self.session.commit()
         return KnowledgeBaseResponse(
             id=kb_id,
@@ -165,6 +180,12 @@ class KnowledgeService:
         )
 
     async def delete_knowledge_base(self, kb_id: str, user_id: str) -> DeleteResponse:
+        try:
+            current = await self._get_knowledge_base(kb_id)
+        except RagentException as exc:
+            if exc.status_code == 404:
+                return DeleteResponse(deleted=False)
+            raise
         result = await self.session.execute(
             text(
                 """
@@ -176,7 +197,10 @@ class KnowledgeService:
             {"id": kb_id, "user_id": user_id},
         )
         await self.session.commit()
-        return DeleteResponse(deleted=result.rowcount > 0)
+        deleted = result.rowcount > 0
+        if deleted:
+            await self.vector_space_manager.drop_collection(current["collection_name"])
+        return DeleteResponse(deleted=deleted)
 
     async def _get_knowledge_base(self, kb_id: str):
         result = await self.session.execute(

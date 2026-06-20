@@ -1,13 +1,16 @@
 import json
 from json import JSONDecodeError
+from functools import lru_cache
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin_user
+from app.core.config import settings
 from app.core.exceptions import RagentException
 from app.core.responses import ApiResponse, success
 from app.db.session import get_db_session
+from app.infra import InMemoryUploadRateLimiter, RedisUploadRateLimiter, UploadRateLimiter
 from app.infra_ai.config import default_embedding_targets
 from app.infra_ai.embedding import RoutingEmbeddingService
 from app.ingestion import IngestionContext, IngestionEngine
@@ -27,6 +30,18 @@ def get_file_storage() -> LocalFileStorage:
 
 def get_embedding_service() -> RoutingEmbeddingService:
     return RoutingEmbeddingService(default_embedding_targets())
+
+
+@lru_cache
+def get_upload_rate_limiter() -> UploadRateLimiter:
+    if not settings.upload_rate_limit_enabled:
+        return InMemoryUploadRateLimiter(settings.upload_rate_limit_per_minute, enabled=False)
+    return RedisUploadRateLimiter(
+        redis_url=settings.redis_url,
+        key_prefix=settings.upload_rate_limit_key_prefix,
+        limit_per_minute=settings.upload_rate_limit_per_minute,
+        enabled=True,
+    )
 
 
 def get_ingestion_engine(
@@ -55,7 +70,9 @@ async def upload_document_api(
     user: User = Depends(require_admin_user),
     storage: LocalFileStorage = Depends(get_file_storage),
     ingestion_engine: IngestionEngine = Depends(get_ingestion_engine),
+    upload_limiter: UploadRateLimiter = Depends(get_upload_rate_limiter),
 ) -> ApiResponse[KnowledgeDocumentResponse]:
+    await upload_limiter.check(str(user.id))
     source_type = _normalize_source_type(sourceType)
     chunk_options = _parse_chunk_config(chunkConfig)
 

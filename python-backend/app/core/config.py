@@ -29,6 +29,25 @@ class Settings(BaseSettings):
     rag_queue_key_prefix: str = "ragent:rag:chat"
     rag_queue_active_ttl_seconds: int = 360
     rag_mcp_servers: str = ""
+    rag_task_queue_backend: str = "memory"
+    rag_task_queue_key_prefix: str = "ragent:tasks"
+    rag_task_visibility_timeout_seconds: int = 300
+    rag_idempotency_ttl_seconds: int = 3600
+    rag_worker_thread_pool_size: int = 8
+    rocketmq_name_server: str = "localhost:9876"
+    rocketmq_producer_group: str = "ragent-python-producer"
+    rocketmq_topic: str = "ragent-python-task"
+    request_context_ttl_seconds: int = 300
+
+    upload_rate_limit_enabled: bool = False
+    upload_rate_limit_per_minute: int = 20
+    upload_rate_limit_key_prefix: str = "ragent:upload"
+
+    milvus_uri: str = "http://localhost:19530"
+    milvus_token: str = Field(default="", repr=False)
+    milvus_db_name: str = "default"
+    milvus_collection_prefix: str = "ragent_"
+    milvus_metric_type: str = "COSINE"
 
     ingestion_storage_dir: str = "storage/uploads"
 

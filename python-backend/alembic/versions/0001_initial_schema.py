@@ -65,6 +65,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     downgrade_sql = """
         DROP TABLE IF EXISTS t_knowledge_vector CASCADE;
+        DROP TABLE IF EXISTS t_task_outbox CASCADE;
         DROP TABLE IF EXISTS t_ingestion_task_node CASCADE;
         DROP TABLE IF EXISTS t_ingestion_task CASCADE;
         DROP TABLE IF EXISTS t_ingestion_pipeline_node CASCADE;

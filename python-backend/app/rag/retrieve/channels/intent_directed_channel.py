@@ -1,11 +1,11 @@
-from app.rag.retrieve import PgVectorStoreService, RetrievedChunk
+from app.rag.retrieve import RetrievedChunk, VectorStoreService
 from app.rag.retrieve.channels.base import SearchChannel, SearchContext
 
 
 class IntentDirectedSearchChannel(SearchChannel):
     name = "intent_directed"
 
-    def __init__(self, vector_store: PgVectorStoreService) -> None:
+    def __init__(self, vector_store: VectorStoreService) -> None:
         self.vector_store = vector_store
 
     async def search(self, context: SearchContext) -> list[RetrievedChunk]:
@@ -15,11 +15,10 @@ class IntentDirectedSearchChannel(SearchChannel):
 
         chunks: list[RetrievedChunk] = []
         for intent in intents:
-            result = await self.vector_store.search(
-                context.query,
-                top_k=intent.top_k or context.top_k,
-                kb_id=intent.kb_id,
-            )
+            search_kwargs = {"top_k": intent.top_k or context.top_k, "kb_id": intent.kb_id}
+            if intent.collection_name:
+                search_kwargs["collection_name"] = intent.collection_name
+            result = await self.vector_store.search(context.query, **search_kwargs)
             for chunk in result:
                 chunks.append(
                     RetrievedChunk(

@@ -5,6 +5,7 @@ from app.api.deps import require_admin_user
 from app.core.responses import ApiResponse, success
 from app.db.session import get_db_session
 from app.models import User
+from app.rag.retrieve import VectorSpaceManager, create_vector_space_manager
 from app.schemas.knowledge import (
     ChunkStrategyOption,
     DeleteResponse,
@@ -18,8 +19,15 @@ from app.services.knowledge_service import KnowledgeService
 router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
 
 
-def get_knowledge_service(session: AsyncSession = Depends(get_db_session)) -> KnowledgeService:
-    return KnowledgeService(session)
+def get_vector_space_manager() -> VectorSpaceManager:
+    return create_vector_space_manager()
+
+
+def get_knowledge_service(
+    session: AsyncSession = Depends(get_db_session),
+    vector_space_manager: VectorSpaceManager = Depends(get_vector_space_manager),
+) -> KnowledgeService:
+    return KnowledgeService(session, vector_space_manager)
 
 
 @router.get("", response_model=ApiResponse[KnowledgeBasePageResponse])

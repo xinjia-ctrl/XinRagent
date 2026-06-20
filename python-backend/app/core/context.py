@@ -1,8 +1,11 @@
 from contextvars import ContextVar
 from dataclasses import dataclass
+from time import time
 from uuid import uuid4
 
 from fastapi import Request
+
+from app.core.config import settings
 
 REQUEST_ID_HEADER = "X-Request-Id"
 
@@ -11,6 +14,11 @@ REQUEST_ID_HEADER = "X-Request-Id"
 class RequestContext:
     request_id: str
     user_id: str | None = None
+    expires_at: float | None = None
+
+    @property
+    def is_expired(self) -> bool:
+        return self.expires_at is not None and time() >= self.expires_at
 
 
 _request_context: ContextVar[RequestContext | None] = ContextVar(
@@ -21,7 +29,8 @@ _request_context: ContextVar[RequestContext | None] = ContextVar(
 
 def create_request_context(request: Request) -> RequestContext:
     request_id = request.headers.get(REQUEST_ID_HEADER) or uuid4().hex
-    return RequestContext(request_id=request_id)
+    ttl = max(settings.request_context_ttl_seconds, 0)
+    return RequestContext(request_id=request_id, expires_at=time() + ttl if ttl else None)
 
 
 def set_request_context(context: RequestContext) -> object:
@@ -33,7 +42,10 @@ def reset_request_context(token: object) -> None:
 
 
 def get_request_context() -> RequestContext | None:
-    return _request_context.get()
+    context = _request_context.get()
+    if context is None or context.is_expired:
+        return None
+    return context
 
 
 def get_request_id(default: str = "-") -> str:

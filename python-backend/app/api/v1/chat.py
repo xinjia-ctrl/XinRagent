@@ -26,7 +26,7 @@ from app.rag.memory import ConversationMemoryService
 from app.rag.pipeline import StreamChatContext, StreamChatPipeline
 from app.rag.rate_limit import ChatQueueLimiter, QueueStatus, RedisQueueBackend
 from app.rag.rewrite import QueryRewriteService
-from app.rag.retrieve import PgVectorStoreService
+from app.rag.retrieve import create_vector_store
 from app.rag.retrieve.channels import IntentDirectedSearchChannel, VectorGlobalSearchChannel
 from app.rag.retrieve.multi_channel_retrieval_engine import MultiChannelRetrievalEngine
 from app.rag.retrieve.retrieval_engine import RetrievalEngine
@@ -59,7 +59,7 @@ def get_retrieval_engine(
     rerank_service: RoutingRerankService = Depends(get_rerank_service),
     mcp_service: MCPService = Depends(get_mcp_service),
 ) -> RetrievalEngine:
-    vector_store = PgVectorStoreService(session=session, embedding_service=embedding_service)
+    vector_store = create_vector_store(session=session, embedding_service=embedding_service)
     return RetrievalEngine(
         MultiChannelRetrievalEngine(
             [

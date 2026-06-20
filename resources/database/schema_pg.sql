@@ -415,6 +415,27 @@ CREATE INDEX idx_ingestion_task_node_pipeline ON t_ingestion_task_node (pipeline
 CREATE INDEX idx_ingestion_task_node_status ON t_ingestion_task_node (status);
 COMMENT ON TABLE t_ingestion_task_node IS '摄取任务节点表';
 
+CREATE TABLE t_task_outbox (
+    id              VARCHAR(20)  NOT NULL PRIMARY KEY,
+    topic           VARCHAR(128) NOT NULL,
+    event_name      VARCHAR(128) NOT NULL,
+    payload_json    JSONB,
+    idempotency_key VARCHAR(255),
+    context_json    JSONB,
+    status          VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+    attempts        INTEGER      NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    next_retry_at   TIMESTAMP,
+    sent_at         TIMESTAMP,
+    create_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted         SMALLINT     NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_task_outbox_topic ON t_task_outbox (topic);
+CREATE INDEX idx_task_outbox_status ON t_task_outbox (status);
+CREATE INDEX idx_task_outbox_idempotency ON t_task_outbox (idempotency_key);
+COMMENT ON TABLE t_task_outbox IS '事务消息 Outbox 表';
+
 -- ============================================
 -- Vector Storage Table (pgvector)
 -- ============================================
@@ -722,3 +743,19 @@ COMMENT ON COLUMN t_ingestion_task_node.output_json IS '节点输出JSON(全量)
 COMMENT ON COLUMN t_ingestion_task_node.create_time IS '创建时间';
 COMMENT ON COLUMN t_ingestion_task_node.update_time IS '更新时间';
 COMMENT ON COLUMN t_ingestion_task_node.deleted IS '是否删除 0：正常 1：删除';
+
+-- t_task_outbox
+COMMENT ON COLUMN t_task_outbox.id IS '消息ID';
+COMMENT ON COLUMN t_task_outbox.topic IS '消息主题';
+COMMENT ON COLUMN t_task_outbox.event_name IS '事件名称';
+COMMENT ON COLUMN t_task_outbox.payload_json IS '事件载荷JSON';
+COMMENT ON COLUMN t_task_outbox.idempotency_key IS '幂等键';
+COMMENT ON COLUMN t_task_outbox.context_json IS '上下文JSON';
+COMMENT ON COLUMN t_task_outbox.status IS '状态 PENDING/SENT/FAILED';
+COMMENT ON COLUMN t_task_outbox.attempts IS '投递尝试次数';
+COMMENT ON COLUMN t_task_outbox.last_error IS '最后错误';
+COMMENT ON COLUMN t_task_outbox.next_retry_at IS '下次重试时间';
+COMMENT ON COLUMN t_task_outbox.sent_at IS '投递完成时间';
+COMMENT ON COLUMN t_task_outbox.create_time IS '创建时间';
+COMMENT ON COLUMN t_task_outbox.update_time IS '更新时间';
+COMMENT ON COLUMN t_task_outbox.deleted IS '是否删除 0：正常 1：删除';

@@ -48,6 +48,7 @@ def test_orm_metadata_covers_schema_core_tables() -> None:
         "t_ingestion_pipeline_node",
         "t_ingestion_task",
         "t_ingestion_task_node",
+        "t_task_outbox",
     }.issubset(Base.metadata.tables.keys())
 
 
