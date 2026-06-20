@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import RagentException
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, hash_password, needs_password_rehash, verify_password
 from app.models import User
 from app.repositories import UserRepository
 from app.schemas.auth import TokenResponse
@@ -15,6 +15,9 @@ async def authenticate_user(session: AsyncSession, username: str, password: str)
         raise RagentException(message="用户名或密码错误", code="40101", status_code=401)
     if user.status != 1:
         raise RagentException(message="用户已被禁用", code="40102", status_code=403)
+    if needs_password_rehash(user.password):
+        user.password = hash_password(password)
+        await session.commit()
     return user
 
 

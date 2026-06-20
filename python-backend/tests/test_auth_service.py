@@ -1,3 +1,4 @@
+import hashlib
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -24,6 +25,22 @@ async def test_login_returns_access_token_for_valid_user() -> None:
     assert token.token_type == "Bearer"
     assert payload is not None
     assert payload["sub"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_login_rehashes_legacy_sha256_password_after_success() -> None:
+    legacy_hash = f"sha256${hashlib.sha256('secret'.encode('utf-8')).hexdigest()}"
+    user = User(username="admin", password=legacy_hash, status=1)
+    user.id = 1
+    session = AsyncMock()
+
+    with patch("app.services.auth_service.UserRepository") as repository_class:
+        repository_class.return_value.get_by_username = AsyncMock(return_value=user)
+
+        await login(session, "admin", "secret")
+
+    assert user.password.startswith("pbkdf2_sha256$")
+    session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

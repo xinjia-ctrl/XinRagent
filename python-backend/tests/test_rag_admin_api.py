@@ -121,9 +121,19 @@ def test_query_term_mapping_apis_match_frontend_contract() -> None:
         pages=1,
     )
     service.create_mapping.return_value = "map-new"
+    service.get_mapping.return_value = QueryTermMappingResponse(
+        id="map-1",
+        sourceTerm="LLM",
+        targetTerm="大语言模型",
+        matchType=1,
+        priority=10,
+        enabled=True,
+        remark="同义词",
+    )
     client = create_rag_admin_client(mapping_service=service)
 
     page_response = client.get("/api/ragent/mappings?current=2&size=5&keyword=LLM")
+    detail_response = client.get("/api/ragent/mappings/map-1")
     create_response = client.post(
         "/api/ragent/mappings",
         json={"sourceTerm": "LLM", "targetTerm": "大语言模型", "matchType": 1, "priority": 10},
@@ -132,10 +142,12 @@ def test_query_term_mapping_apis_match_frontend_contract() -> None:
     delete_response = client.delete("/api/ragent/mappings/map-1")
 
     assert page_response.json()["data"]["records"][0]["targetTerm"] == "大语言模型"
+    assert detail_response.json()["data"]["id"] == "map-1"
     assert create_response.json()["data"] == "map-new"
     assert update_response.json()["data"] is None
     assert delete_response.json()["data"] is None
     service.list_mappings.assert_awaited_once_with(current=2, size=5, keyword="LLM")
+    service.get_mapping.assert_awaited_once_with("map-1")
     create_request = service.create_mapping.await_args.args[0]
     update_request = service.update_mapping.await_args.args[1]
     assert create_request.source_term == "LLM"
@@ -159,11 +171,13 @@ def test_sample_question_apis_match_frontend_contract() -> None:
         current=1,
         pages=1,
     )
+    service.get_question.return_value = sample
     service.create_question.return_value = "question-new"
     client = create_rag_admin_client(sample_service=service)
 
     public_response = client.get("/api/ragent/rag/sample-questions")
     page_response = client.get("/api/ragent/sample-questions?current=1&size=10&keyword=知识库")
+    detail_response = client.get("/api/ragent/sample-questions/question-1")
     create_response = client.post(
         "/api/ragent/sample-questions",
         json={"title": "入门", "description": "常见问题", "question": "Ragent 如何接入知识库？"},
@@ -173,10 +187,12 @@ def test_sample_question_apis_match_frontend_contract() -> None:
 
     assert public_response.json()["data"][0]["question"] == "Ragent 如何接入知识库？"
     assert page_response.json()["data"]["records"][0]["title"] == "入门"
+    assert detail_response.json()["data"]["id"] == "question-1"
     assert create_response.json()["data"] == "question-new"
     assert update_response.json()["data"] is None
     assert delete_response.json()["data"] is None
     service.list_questions.assert_awaited_once_with(current=1, size=10, keyword="知识库")
+    service.get_question.assert_awaited_once_with("question-1")
     create_request = service.create_question.await_args.args[0]
     update_request = service.update_question.await_args.args[1]
     assert create_request.question == "Ragent 如何接入知识库？"

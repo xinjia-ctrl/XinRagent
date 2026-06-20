@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     auth_secret_key: str = Field(default="ragent-dev-secret", repr=False)
     auth_token_expire_seconds: int = 86400
+    auth_password_pbkdf2_iterations: int = 600000
 
     rag_vector_type: str = "pg"
     rag_default_collection_name: str = "rag_default_store"

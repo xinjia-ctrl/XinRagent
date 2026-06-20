@@ -85,6 +85,9 @@ class QueryTermMappingService:
         await self.session.commit()
         return mapping_id
 
+    async def get_mapping(self, mapping_id: str) -> QueryTermMappingResponse:
+        return self._map_mapping(await self._get_mapping(mapping_id))
+
     async def update_mapping(self, mapping_id: str, request: QueryTermMappingPayload, user_id: str) -> None:
         await self._get_mapping(mapping_id)
         values = request.model_dump(exclude_unset=True)
@@ -139,7 +142,7 @@ class QueryTermMappingService:
         result = await self.session.execute(
             text(
                 """
-                SELECT id
+                SELECT id, source_term, target_term, match_type, priority, enabled, remark, create_time, update_time
                 FROM t_query_term_mapping
                 WHERE id = :id AND deleted = 0
                 """,

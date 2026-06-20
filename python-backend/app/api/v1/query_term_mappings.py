@@ -8,6 +8,7 @@ from app.models import User
 from app.schemas.query_term_mapping import (
     QueryTermMappingPageResponse,
     QueryTermMappingPayload,
+    QueryTermMappingResponse,
 )
 from app.services.query_term_mapping_service import QueryTermMappingService
 
@@ -27,6 +28,15 @@ async def list_query_term_mappings_api(
     service: QueryTermMappingService = Depends(get_query_term_mapping_service),
 ) -> ApiResponse[QueryTermMappingPageResponse]:
     return success(await service.list_mappings(current=current, size=size, keyword=keyword))
+
+
+@router.get("/{mapping_id}", response_model=ApiResponse[QueryTermMappingResponse])
+async def get_query_term_mapping_api(
+    mapping_id: str,
+    _: User = Depends(require_admin_user),
+    service: QueryTermMappingService = Depends(get_query_term_mapping_service),
+) -> ApiResponse[QueryTermMappingResponse]:
+    return success(await service.get_mapping(mapping_id))
 
 
 @router.post("", response_model=ApiResponse[str])

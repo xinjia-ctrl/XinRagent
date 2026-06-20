@@ -90,6 +90,9 @@ class SampleQuestionService:
         await self.session.commit()
         return question_id
 
+    async def get_question(self, question_id: str) -> SampleQuestionResponse:
+        return self._map_question(await self._get_question(question_id))
+
     async def update_question(self, question_id: str, request: SampleQuestionPayload) -> None:
         await self._get_question(question_id)
         values = request.model_dump(exclude_unset=True)
@@ -133,7 +136,7 @@ class SampleQuestionService:
         result = await self.session.execute(
             text(
                 """
-                SELECT id
+                SELECT id, title, description, question, create_time, update_time
                 FROM t_sample_question
                 WHERE id = :id AND deleted = 0
                 """,

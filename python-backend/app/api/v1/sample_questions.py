@@ -38,6 +38,15 @@ async def list_sample_questions_api(
     return success(await service.list_questions(current=current, size=size, keyword=keyword))
 
 
+@router.get("/sample-questions/{question_id}", response_model=ApiResponse[SampleQuestionResponse])
+async def get_sample_question_api(
+    question_id: str,
+    _: User = Depends(require_admin_user),
+    service: SampleQuestionService = Depends(get_sample_question_service),
+) -> ApiResponse[SampleQuestionResponse]:
+    return success(await service.get_question(question_id))
+
+
 @router.post("/sample-questions", response_model=ApiResponse[str])
 async def create_sample_question_api(
     request: SampleQuestionPayload,
