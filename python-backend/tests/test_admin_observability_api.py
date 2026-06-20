@@ -1,8 +1,9 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.api.v1.chat import get_llm_service
 from app.api.v1.dashboard import get_dashboard_service
 from app.api.v1.settings import get_settings_service
 from app.api.v1.traces import get_trace_service
@@ -46,6 +47,7 @@ def create_admin_client(
     trace_service: object | None = None,
     dashboard_service: object | None = None,
     settings_service: object | None = None,
+    llm_service: object | None = None,
 ) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_current_user] = override_current_user
@@ -55,6 +57,8 @@ def create_admin_client(
         app.dependency_overrides[get_dashboard_service] = lambda: dashboard_service
     if settings_service is not None:
         app.dependency_overrides[get_settings_service] = lambda: settings_service
+    if llm_service is not None:
+        app.dependency_overrides[get_llm_service] = lambda: llm_service
     return TestClient(app)
 
 
@@ -216,3 +220,41 @@ def test_system_settings_api_matches_frontend_contract() -> None:
     assert response.status_code == 200
     assert response.json()["data"]["rag"]["rateLimit"]["global"]["maxConcurrent"] == 100
     assert response.json()["data"]["ai"]["chat"]["candidates"][0]["supportsThinking"] is True
+
+
+def test_model_health_observability_api_matches_frontend_contract() -> None:
+    service = MagicMock()
+    service.health_snapshot.return_value = [
+        {
+            "name": "qwen-plus",
+            "provider": "bailian",
+            "model": "qwen-plus-latest",
+            "priority": 1,
+            "state": "closed",
+            "totalCalls": 3,
+            "successCount": 2,
+            "failureCount": 1,
+            "consecutiveFailureCount": 0,
+            "lastLatencyMs": 120.5,
+            "avgLatencyMs": 140.0,
+            "lastFirstTokenMs": 45.0,
+            "lastSuccessAt": 1710000000.0,
+            "lastFailureAt": 1709999999.0,
+            "lastProbeAt": 1710000000.0,
+            "lastError": None,
+        },
+    ]
+    service.probe_first_token = AsyncMock(
+        return_value=[
+            {"name": "qwen-plus", "success": True, "latencyMs": 120.5, "firstTokenMs": 45.0},
+        ],
+    )
+    client = create_admin_client(llm_service=service)
+
+    snapshot_response = client.get("/api/ragent/admin/ai/model-health")
+    probe_response = client.post("/api/ragent/admin/ai/model-health/probe")
+
+    assert snapshot_response.json()["data"][0]["lastFirstTokenMs"] == 45.0
+    assert probe_response.json()["data"][0]["success"] is True
+    service.health_snapshot.assert_called_once()
+    service.probe_first_token.assert_awaited_once()

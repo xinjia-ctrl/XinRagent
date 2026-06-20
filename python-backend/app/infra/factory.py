@@ -18,7 +18,10 @@ def get_task_queue() -> TaskQueue:
         return RocketMQTaskQueue(
             name_server=settings.rocketmq_name_server,
             producer_group=settings.rocketmq_producer_group,
+            consumer_group=settings.rocketmq_consumer_group,
             topic=settings.rocketmq_topic,
+            dlq_topic=settings.rocketmq_dlq_topic,
+            max_attempts=settings.rocketmq_max_consume_attempts,
         )
     return InMemoryTaskQueue()
 

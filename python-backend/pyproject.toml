@@ -30,6 +30,9 @@ prod = [
     "rocketmq-client-python>=2.0.0",
 ]
 
+[project.scripts]
+ragent-mcp-server = "app.mcp_server:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

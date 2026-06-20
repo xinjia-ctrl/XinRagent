@@ -37,14 +37,17 @@ from app.services.trace_service import TraceService
 router = APIRouter(prefix="/rag/v3", tags=["rag"])
 
 
+@lru_cache
 def get_llm_service() -> RoutingLLMService:
     return RoutingLLMService(default_chat_targets())
 
 
+@lru_cache
 def get_embedding_service() -> RoutingEmbeddingService:
     return RoutingEmbeddingService(default_embedding_targets())
 
 
+@lru_cache
 def get_rerank_service() -> RoutingRerankService:
     return RoutingRerankService(default_rerank_targets())
 

@@ -86,7 +86,17 @@ RAG_DEFAULT_DIMENSION=1536
 RAG_DEFAULT_TOP_K=5
 RAG_QUEUE_LIMIT_ENABLED=false
 RAG_MCP_SERVERS=
+MCP_HOST=0.0.0.0
+MCP_PORT=9091
 INGESTION_STORAGE_DIR=storage/uploads
+
+RAG_TASK_QUEUE_BACKEND=memory
+ROCKETMQ_NAME_SERVER=localhost:9876
+ROCKETMQ_PRODUCER_GROUP=ragent-python-producer
+ROCKETMQ_CONSUMER_GROUP=ragent-python-consumer
+ROCKETMQ_TOPIC=ragent-python-task
+ROCKETMQ_DLQ_TOPIC=ragent-python-task.DLQ
+ROCKETMQ_MAX_CONSUME_ATTEMPTS=3
 
 AI_BAILIAN_URL=https://dashscope.aliyuncs.com
 AI_BAILIAN_API_KEY=
@@ -106,6 +116,9 @@ AI_RERANK_DEFAULT_MODEL=qwen3-rerank
 ```powershell
 # 启动开发服务
 uvicorn app.main:app --reload --port 9090
+
+# 单独启动 MCP JSON-RPC 工具服务
+ragent-mcp-server
 
 # 运行测试
 python -m pytest
@@ -140,6 +153,7 @@ python-backend/
     db/             # 异步数据库连接
     infra_ai/       # 聊天、Embedding、Rerank 与模型路由
     ingestion/      # 文档上传、解析、分块、索引
+    mcp/            # MCP JSON-RPC 服务、客户端、工具注册与参数提取
     models/         # SQLAlchemy ORM 模型
     rag/            # 流式任务、Prompt、检索、Pipeline
     repositories/   # 基础数据访问层
@@ -233,6 +247,12 @@ Trace：
 - `GET /api/ragent/admin/dashboard/overview`
 - `GET /api/ragent/admin/dashboard/performance`
 - `GET /api/ragent/admin/dashboard/trends`
+- `GET /api/ragent/admin/ai/model-health`
+- `POST /api/ragent/admin/ai/model-health/probe`
+
+独立 MCP 服务：
+
+- `POST /mcp`
 
 ## 测试说明
 

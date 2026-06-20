@@ -1,7 +1,9 @@
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 
 from app.infra_ai.chat import ChatRequest, ChatResponse
+from app.mcp.client import HttpMCPClient
 from app.mcp.core import MCPParameterDef, MCPRequest, MCPResponse, MCPTool
 from app.mcp.local_executors import WeatherMCPExecutor
 from app.mcp.parameter_extractor import MCPParameterExtractor
@@ -112,3 +114,47 @@ def test_mcp_server_handles_json_rpc_tool_list_and_call() -> None:
     result = call_response.json()["result"]
     assert result["isError"] is False
     assert "上海" in result["content"][0]["text"]
+
+
+def test_mcp_server_requires_lifecycle_before_tool_discovery() -> None:
+    client = TestClient(create_mcp_app())
+
+    before_initialize = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+    )
+    batch_response = client.post(
+        "/mcp",
+        json=[
+            {"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+        ],
+    )
+    after_initialize = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 3, "method": "tools/list"},
+    )
+
+    assert before_initialize.json()["error"]["code"] == -32602
+    assert batch_response.json()[0]["result"]["capabilities"]["tools"]["listChanged"] is True
+    assert len(batch_response.json()) == 1
+    assert after_initialize.json()["result"]["nextCursor"] is None
+    assert after_initialize.json()["result"]["tools"]
+
+
+@pytest.mark.asyncio
+async def test_http_mcp_client_is_compatible_with_asgi_mcp_server() -> None:
+    transport = httpx.ASGITransport(app=create_mcp_app())
+    client = HttpMCPClient("http://testserver", transport=transport)
+
+    tools = await client.list_tools()
+    response = await client.call_tool(
+        MCPRequest(
+            tool_id="weather_query",
+            arguments={"city": "上海", "queryType": "forecast", "days": 1},
+        ),
+    )
+
+    assert any(tool.tool_id == "weather_query" for tool in tools)
+    assert response.success is True
+    assert "上海" in (response.content or "")

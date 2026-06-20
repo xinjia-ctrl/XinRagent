@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     rag_queue_key_prefix: str = "ragent:rag:chat"
     rag_queue_active_ttl_seconds: int = 360
     rag_mcp_servers: str = ""
+    mcp_host: str = "0.0.0.0"
+    mcp_port: int = 9091
     rag_task_queue_backend: str = "memory"
     rag_task_queue_key_prefix: str = "ragent:tasks"
     rag_task_visibility_timeout_seconds: int = 300
@@ -37,7 +39,10 @@ class Settings(BaseSettings):
     rag_worker_thread_pool_size: int = 8
     rocketmq_name_server: str = "localhost:9876"
     rocketmq_producer_group: str = "ragent-python-producer"
+    rocketmq_consumer_group: str = "ragent-python-consumer"
     rocketmq_topic: str = "ragent-python-task"
+    rocketmq_dlq_topic: str = "ragent-python-task.DLQ"
+    rocketmq_max_consume_attempts: int = 3
     request_context_ttl_seconds: int = 300
 
     upload_rate_limit_enabled: bool = False

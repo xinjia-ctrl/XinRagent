@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, Protocol
 
 
@@ -18,6 +19,12 @@ class MCPTool:
     parameters: dict[str, MCPParameterDef] = field(default_factory=dict)
     require_user_id: bool = True
     mcp_server_url: str | None = None
+
+
+class MCPSessionState(StrEnum):
+    NEW = "new"
+    INITIALIZED = "initialized"
+    READY = "ready"
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable, Sequence
+from time import perf_counter
 from typing import TypeVar
 
 from app.core.exceptions import RagentException
@@ -22,15 +23,24 @@ class ModelRoutingExecutor:
             if not self.health_store.can_call(target.name):
                 continue
 
+            started_at = perf_counter()
             try:
                 result = await operation(target)
             except Exception as exc:
-                self.health_store.mark_failure(target.name)
+                self.health_store.mark_failure(
+                    target.name,
+                    error=exc,
+                    latency_ms=_elapsed_ms(started_at),
+                )
                 last_error = exc
                 continue
 
-            self.health_store.mark_success(target.name)
+            self.health_store.mark_success(target.name, latency_ms=_elapsed_ms(started_at))
             return result
 
         detail = f": {last_error}" if last_error else ""
         raise RagentException(message=f"所有模型调用失败{detail}", code="AI_REMOTE_ERROR", status_code=502)
+
+
+def _elapsed_ms(started_at: float) -> float:
+    return round((perf_counter() - started_at) * 1000, 3)

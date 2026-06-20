@@ -6,19 +6,27 @@ from app.mcp.core import MCPParameterDef, MCPRequest, MCPResponse, MCPTool
 
 
 class HttpMCPClient:
-    def __init__(self, server_url: str, timeout: float = 20.0) -> None:
+    def __init__(
+        self,
+        server_url: str,
+        timeout: float = 20.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
+        self.transport = transport
         self._request_id = 1
+        self._is_initialized = False
 
     async def call_tool(self, request: MCPRequest) -> MCPResponse:
+        await self.ensure_initialized()
         payload = {
             "jsonrpc": "2.0",
             "id": self._next_id(),
             "method": "tools/call",
             "params": {"name": request.tool_id, "arguments": request.arguments},
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with self._http_client() as client:
             response = await client.post(self._endpoint(), json=payload)
             response.raise_for_status()
             body = response.json()
@@ -42,19 +50,30 @@ class HttpMCPClient:
                 "clientInfo": {"name": "ragent-python", "version": "0.1.0"},
             },
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with self._http_client() as client:
             response = await client.post(self._endpoint(), json=payload)
             response.raise_for_status()
             body = response.json()
-        return not body.get("error")
+        if body.get("error"):
+            return False
+        await self._send_initialized_notification()
+        self._is_initialized = True
+        return True
+
+    async def ensure_initialized(self) -> bool:
+        if self._is_initialized:
+            return True
+        return await self.initialize()
 
     async def list_tools(self) -> list[MCPTool]:
+        if not await self.ensure_initialized():
+            return []
         payload = {
             "jsonrpc": "2.0",
             "id": self._next_id(),
             "method": "tools/list",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with self._http_client() as client:
             response = await client.post(self._endpoint(), json=payload)
             response.raise_for_status()
             body = response.json()
@@ -70,6 +89,9 @@ class HttpMCPClient:
         current = self._request_id
         self._request_id += 1
         return current
+
+    def _http_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
 
     @staticmethod
     def _extract_text(result: dict[str, Any]) -> str | None:
@@ -92,6 +114,7 @@ class HttpMCPClient:
                     description=definition.get("description", ""),
                     type=definition.get("type", "string"),
                     required=name in required,
+                    default=definition.get("default"),
                     enum_values=list(definition.get("enum") or []),
                 )
         return MCPTool(
@@ -100,3 +123,13 @@ class HttpMCPClient:
             parameters=parameters,
             mcp_server_url=self.server_url,
         )
+
+    async def _send_initialized_notification(self) -> None:
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {},
+        }
+        async with self._http_client() as client:
+            response = await client.post(self._endpoint(), json=payload)
+            response.raise_for_status()

@@ -11,6 +11,7 @@ from app.api.v1 import (
     ingestion_admin,
     intent_tree,
     knowledge_base,
+    model_health,
     query_term_mappings,
     sample_questions,
     settings as settings_api,
@@ -32,6 +33,7 @@ api_router.include_router(ingestion.router, prefix=settings.api_prefix)
 api_router.include_router(ingestion_admin.router, prefix=settings.api_prefix)
 api_router.include_router(intent_tree.router, prefix=settings.api_prefix)
 api_router.include_router(knowledge_base.router, prefix=settings.api_prefix)
+api_router.include_router(model_health.router, prefix=settings.api_prefix)
 api_router.include_router(documents.router, prefix=settings.api_prefix)
 api_router.include_router(query_term_mappings.router, prefix=settings.api_prefix)
 api_router.include_router(sample_questions.router, prefix=settings.api_prefix)

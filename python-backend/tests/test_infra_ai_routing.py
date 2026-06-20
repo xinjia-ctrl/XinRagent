@@ -108,6 +108,9 @@ async def test_routing_llm_service_stream_uses_client_stream_and_fallback() -> N
 
     assert calls == ["primary", "secondary"]
     assert chunks == ["真", "流式"]
+    secondary_health = service.executor.health_store.get("secondary")
+    assert secondary_health.last_first_token_ms is not None
+    assert secondary_health.success_count == 1
 
 
 @pytest.mark.asyncio
@@ -137,3 +140,29 @@ async def test_routing_llm_service_prefers_requested_model_target() -> None:
 
     assert calls == ["thinking"]
     assert chunks == ["thinking"]
+
+
+@pytest.mark.asyncio
+async def test_routing_llm_service_probe_records_first_token_metrics() -> None:
+    class FakeClient:
+        def __init__(self, model_target: ModelTarget) -> None:
+            self.model_target = model_target
+
+        async def complete(self, _: ChatRequest):
+            raise AssertionError("probe should not call complete")
+
+        async def stream(self, _: ChatRequest):
+            yield ChatChunk(delta=f"{self.model_target.name}-ok")
+
+    service = RoutingLLMService(
+        [target("primary", 10), target("secondary", 20)],
+        client_factory=FakeClient,
+    )
+
+    probe_results = await service.probe_first_token()
+    snapshot = service.health_snapshot()
+
+    assert [item["name"] for item in probe_results] == ["primary", "secondary"]
+    assert all(item["success"] is True for item in probe_results)
+    assert all(item["lastProbeAt"] is not None for item in snapshot)
+    assert all(item["lastFirstTokenMs"] is not None for item in snapshot)

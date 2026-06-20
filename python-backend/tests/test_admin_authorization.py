@@ -15,6 +15,7 @@ from app.models import User
 
 ADMIN_PATH_PREFIXES = (
     "/api/ragent/admin/dashboard",
+    "/api/ragent/admin/ai",
     "/api/ragent/rag/traces",
     "/api/ragent/rag/settings",
     "/api/ragent/ingestion",
@@ -62,6 +63,8 @@ def test_admin_routes_depend_on_admin_guard() -> None:
     ("method", "path"),
     [
         ("get", "/api/ragent/admin/dashboard/overview"),
+        ("get", "/api/ragent/admin/ai/model-health"),
+        ("post", "/api/ragent/admin/ai/model-health/probe"),
         ("get", "/api/ragent/rag/traces/runs"),
         ("get", "/api/ragent/rag/settings"),
         ("get", "/api/ragent/ingestion/pipelines"),

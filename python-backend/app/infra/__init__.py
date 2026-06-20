@@ -2,9 +2,12 @@
 
 from app.infra.idempotency import IdempotencyStore, InMemoryIdempotencyStore, RedisIdempotencyStore
 from app.infra.task_queue import (
+    DeadLetterTask,
     InMemoryTaskQueue,
     RedisStreamTaskQueue,
     RocketMQTaskQueue,
+    TaskConsumeTrace,
+    TaskIdempotencyStore,
     TaskMessage,
     TaskQueue,
 )
@@ -15,6 +18,7 @@ from app.infra.factory import get_idempotency_store, get_task_queue, get_worker_
 
 __all__ = [
     "IdempotencyStore",
+    "DeadLetterTask",
     "InMemoryIdempotencyStore",
     "InMemoryTaskQueue",
     "InMemoryUploadRateLimiter",
@@ -23,6 +27,8 @@ __all__ = [
     "RedisUploadRateLimiter",
     "RocketMQTaskQueue",
     "OutboxMessage",
+    "TaskConsumeTrace",
+    "TaskIdempotencyStore",
     "TaskMessage",
     "TaskQueue",
     "TransactionalTaskPublisher",
