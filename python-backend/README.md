@@ -136,6 +136,10 @@ python -m pytest
 $env:MILVUS_INTEGRATION_ENABLED="true"
 python -m pytest tests\test_milvus_integration.py
 
+# 从仓库根目录启动基础设施并运行真实服务端到端冒烟测试
+cd D:\XinRagent
+powershell -ExecutionPolicy Bypass -File scripts\verify-real-services.ps1 -StartInfra
+
 # 只运行 RAG 相关测试
 python -m pytest tests\test_rag_chat_api.py tests\test_rag_vector_chain.py
 
@@ -282,6 +286,15 @@ python -m pytest
 cd D:\XinRagent
 powershell -ExecutionPolicy Bypass -File scripts\verify-day10.ps1
 ```
+
+执行真实服务联调验证：
+
+```powershell
+cd D:\XinRagent
+powershell -ExecutionPolicy Bypass -File scripts\verify-real-services.ps1 -StartInfra
+```
+
+该脚本会拉起 `resources/docker/python-infra.compose.yaml` 中的 PostgreSQL + pgvector、Redis、RocketMQ、Milvus 等依赖，然后运行 `tests\test_real_services_smoke.py` 和真实 Milvus 生命周期测试。普通 `python -m pytest` 下这些测试默认跳过，必须显式设置 `REAL_SERVICES_SMOKE_ENABLED=true` 才会连接外部服务。
 
 测试中 AI 调用、流式聊天、文档入库和后台管理接口均使用 fake 或 mock 对象，避免依赖外部模型服务。
 

@@ -58,6 +58,7 @@ services:
         fileReservedTime = 48
         brokerRole = ASYNC_MASTER
         flushDiskType = ASYNC_FLUSH
+        autoCreateTopicEnable = true
         brokerIP1 = 127.0.0.1
         timerMaxDelaySec = 31622400
         EOF

@@ -33,3 +33,13 @@ MILVUS_URI=http://localhost:19530
 ```powershell
 pip install -e "python-backend[prod]"
 ```
+
+真实端到端冒烟测试覆盖 PostgreSQL、Redis、Milvus、RocketMQ、MCP JSON-RPC 和 Alembic 迁移。推荐从仓库根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\verify-real-services.ps1 -StartInfra
+```
+
+如果基础设施已经启动，可以省略 `-StartInfra`。脚本会显式打开 `REAL_SERVICES_SMOKE_ENABLED` 和 `MILVUS_INTEGRATION_ENABLED`，避免普通单测误连真实服务。
+
+脚本使用独立的 `ragent-python-task-smoke` RocketMQ 主题，compose 中已开启本地测试所需的 topic 自动创建；连接已有 RocketMQ 环境时，也可以提前创建同名主题。
