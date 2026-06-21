@@ -1,7 +1,13 @@
 import { api } from "@/services/api";
 import type { CurrentUser, User } from "@/types";
 
-export interface LoginResponse extends User {}
+export interface LoginResponse extends User {
+  access_token: string;
+  refresh_token: string;
+  refreshToken: string;
+  expires_in: number;
+  refresh_expires_in: number;
+}
 export interface CurrentUserResponse extends CurrentUser {}
 
 export async function login(username: string, password: string) {
@@ -10,6 +16,10 @@ export async function login(username: string, password: string) {
 
 export async function logout() {
   return api.post<void>("/auth/logout");
+}
+
+export async function refreshToken(refreshToken: string) {
+  return api.post<LoginResponse>("/auth/refresh", { refresh_token: refreshToken });
 }
 
 export async function getCurrentUser() {

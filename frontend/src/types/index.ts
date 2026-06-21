@@ -9,6 +9,7 @@ export interface User {
   username?: string;
   role: string;
   token: string;
+  refreshToken?: string;
   avatar?: string;
 }
 

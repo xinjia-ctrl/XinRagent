@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+import logging
 from time import perf_counter
 
 from app.core.config import settings
@@ -9,6 +10,8 @@ from app.rag.pipeline.stream_chat_context import StreamChatContext
 from app.rag.prompt import PromptService
 from app.rag.retrieve.retrieval_engine import RetrievalEngine
 from app.rag.rewrite import QueryRewriteService
+
+logger = logging.getLogger(__name__)
 
 
 class StreamChatPipeline:
@@ -195,6 +198,11 @@ class StreamChatPipeline:
         context.assistant_message_id = appended.message_id
         if appended.title:
             context.title = appended.title
+        if hasattr(self.memory_service, "maybe_compact_history"):
+            try:
+                await self.memory_service.maybe_compact_history(context.conversation_id, context.user_id)
+            except Exception as exc:
+                logger.warning("conversation memory compaction failed: %s", exc)
 
     @staticmethod
     def _chat_model(context: StreamChatContext) -> str:

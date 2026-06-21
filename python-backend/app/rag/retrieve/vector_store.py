@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, Protocol
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -47,6 +47,10 @@ class VectorStoreService(Protocol):
     async def drop_collection(self, collection_name: str) -> None: ...
 
     async def index_chunks(self, collection_name: str, chunks: list[VectorIndexChunk]) -> None: ...
+
+    async def delete_chunks(self, collection_name: str, chunk_ids: list[str]) -> None: ...
+
+    async def rebuild_collection(self, spec: VectorCollectionSpec) -> None: ...
 
 
 class PgVectorStoreService:
@@ -131,6 +135,25 @@ class PgVectorStoreService:
                     "embedding": self._vector_literal(chunk.vector),
                 },
             )
+
+    async def delete_chunks(self, collection_name: str, chunk_ids: list[str]) -> None:
+        if not chunk_ids:
+            return
+        statement = text(
+            """
+            DELETE FROM t_knowledge_vector
+            WHERE id IN :chunk_ids
+              AND metadata ->> 'collectionName' = :collection_name
+            """,
+        ).bindparams(bindparam("chunk_ids", expanding=True))
+        await self.session.execute(
+            statement,
+            {"chunk_ids": chunk_ids, "collection_name": collection_name},
+        )
+
+    async def rebuild_collection(self, spec: VectorCollectionSpec) -> None:
+        await self.drop_collection(spec.name)
+        await self.ensure_collection(spec)
 
     async def _embed_query(self, query: str) -> list[float]:
         response = await self.embedding_service.embed(
@@ -249,8 +272,26 @@ class MilvusVectorStoreService:
         resolved_collection = self._collection_name(collection_name)
         if hasattr(self.client, "upsert"):
             self.client.upsert(collection_name=resolved_collection, data=rows)
+        else:
+            self.client.insert(collection_name=resolved_collection, data=rows)
+        self._flush_collection(resolved_collection)
+
+    async def delete_chunks(self, collection_name: str, chunk_ids: list[str]) -> None:
+        if not chunk_ids:
             return
-        self.client.insert(collection_name=resolved_collection, data=rows)
+        resolved_collection = self._collection_name(collection_name)
+        if not self.client.has_collection(resolved_collection):
+            return
+        if hasattr(self.client, "delete"):
+            try:
+                self.client.delete(collection_name=resolved_collection, ids=chunk_ids)
+            except TypeError:
+                self.client.delete(collection_name=resolved_collection, filter=self._id_filter(chunk_ids))
+        self._flush_collection(resolved_collection)
+
+    async def rebuild_collection(self, spec: VectorCollectionSpec) -> None:
+        await self.drop_collection(spec.name)
+        await self.ensure_collection(spec)
 
     @property
     def client(self):
@@ -329,6 +370,15 @@ class MilvusVectorStoreService:
             params={"M": 48, "efConstruction": 200},
         )
         return index_params
+
+    def _flush_collection(self, collection_name: str) -> None:
+        if hasattr(self.client, "flush"):
+            self.client.flush(collection_name=collection_name)
+
+    @staticmethod
+    def _id_filter(chunk_ids: list[str]) -> str:
+        quoted_ids = ", ".join(json.dumps(chunk_id, ensure_ascii=False) for chunk_id in chunk_ids)
+        return f"id in [{quoted_ids}]"
 
 
 class VectorSpaceManager:

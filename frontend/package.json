@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test:parity": "node scripts/verify-frontend-parity.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {

@@ -44,6 +44,9 @@ exclude = ["tests*", "test_runtime*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: 需要真实外部服务的集成测试",
+]
 
 [tool.ruff]
 line-length = 100

@@ -95,6 +95,9 @@ class FakeMilvusClient:
         self.created: list[dict] = []
         self.upserts: list[dict] = []
         self.searches: list[dict] = []
+        self.deletes: list[dict] = []
+        self.dropped: list[str] = []
+        self.flushed: list[str] = []
 
     def has_collection(self, collection_name: str) -> bool:
         return collection_name in self.collections
@@ -105,6 +108,16 @@ class FakeMilvusClient:
 
     def upsert(self, **kwargs) -> None:
         self.upserts.append(kwargs)
+
+    def delete(self, **kwargs) -> None:
+        self.deletes.append(kwargs)
+
+    def drop_collection(self, collection_name: str) -> None:
+        self.dropped.append(collection_name)
+        self.collections.discard(collection_name)
+
+    def flush(self, **kwargs) -> None:
+        self.flushed.append(kwargs["collection_name"])
 
     def search(self, **kwargs):
         self.searches.append(kwargs)
@@ -144,6 +157,7 @@ async def test_milvus_vector_store_manages_collection_and_indexes_chunks() -> No
     assert client.created[0]["dimension"] == 2
     assert client.upserts[0]["collection_name"] == "ragent_kb_docs"
     assert client.upserts[0]["data"][0]["metadata"]["collectionName"] == "kb_docs"
+    assert client.flushed == ["ragent_kb_docs"]
 
 
 @pytest.mark.asyncio
@@ -161,3 +175,18 @@ async def test_milvus_vector_store_searches_selected_collection() -> None:
     assert chunks[0].score == pytest.approx(0.88)
     assert client.searches[0]["collection_name"] == "ragent_kb_docs"
     assert client.searches[0]["filter"] == 'metadata["kbId"] == "kb-1"'
+
+
+@pytest.mark.asyncio
+async def test_milvus_vector_store_deletes_chunks_and_rebuilds_collection() -> None:
+    client = FakeMilvusClient()
+    client.collections.add("ragent_kb_docs")
+    service = MilvusVectorStoreService(client=client)
+
+    await service.delete_chunks("kb_docs", ["chunk-1", "chunk-2"])
+    await service.rebuild_collection(VectorCollectionSpec(name="kb_docs", dimension=2))
+
+    assert client.deletes[0]["collection_name"] == "ragent_kb_docs"
+    assert client.deletes[0]["ids"] == ["chunk-1", "chunk-2"]
+    assert client.dropped == ["ragent_kb_docs"]
+    assert client.created[-1]["collection_name"] == "ragent_kb_docs"

@@ -303,6 +303,35 @@ async def test_stream_chat_pipeline_loads_memory_rewrites_intents_and_persists_a
 
 
 @pytest.mark.asyncio
+async def test_stream_chat_pipeline_triggers_memory_compaction_after_answer_saved() -> None:
+    class CompactingMemoryService(CapturingMemoryService):
+        def __init__(self) -> None:
+            super().__init__()
+            self.compacted: list[tuple[str, str]] = []
+
+        async def maybe_compact_history(self, conversation_id: str, user_id: str) -> None:
+            self.compacted.append((conversation_id, user_id))
+
+    memory_service = CompactingMemoryService()
+    pipeline = StreamChatPipeline(
+        llm_service=CapturingLLMService(),
+        retrieval_engine=FakeRetrievalEngine(),
+        memory_service=memory_service,
+    )
+    context = StreamChatContext(
+        question="Ragent 支持什么检索？",
+        conversation_id="conv-1",
+        task_id="task-1",
+        user_id="user-1",
+    )
+
+    deltas = [delta async for delta in pipeline.execute(context)]
+
+    assert deltas == ["已基于知识库回答"]
+    assert memory_service.compacted == [("conv-1", "user-1")]
+
+
+@pytest.mark.asyncio
 async def test_intent_directed_channel_searches_each_knowledge_intent() -> None:
     class FakeVectorStore:
         def __init__(self) -> None:

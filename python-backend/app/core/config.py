@@ -16,6 +16,12 @@ class Settings(BaseSettings):
 
     auth_secret_key: str = Field(default="ragent-dev-secret", repr=False)
     auth_token_expire_seconds: int = 86400
+    auth_refresh_token_expire_seconds: int = 604800
+    auth_token_issuer: str = "ragent-python"
+    auth_token_audience: str = "ragent-web"
+    auth_token_store_backend: str = "memory"
+    auth_audit_backend: str = "memory"
+    auth_audit_key_prefix: str = "ragent:auth:audit"
     auth_password_pbkdf2_iterations: int = 600000
 
     rag_vector_type: str = "pg"
@@ -29,6 +35,10 @@ class Settings(BaseSettings):
     rag_queue_poll_interval_seconds: float = 0.5
     rag_queue_key_prefix: str = "ragent:rag:chat"
     rag_queue_active_ttl_seconds: int = 360
+    rag_memory_summary_enabled: bool = True
+    rag_memory_summary_start_messages: int = 12
+    rag_memory_summary_keep_recent_messages: int = 8
+    rag_memory_summary_max_chars: int = 1200
     rag_mcp_servers: str = ""
     mcp_host: str = "0.0.0.0"
     mcp_port: int = 9091

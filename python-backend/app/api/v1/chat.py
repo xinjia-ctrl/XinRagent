@@ -79,8 +79,11 @@ def get_trace_service(session: AsyncSession = Depends(get_db_session)) -> TraceS
     return TraceService(session)
 
 
-def get_memory_service(session: AsyncSession = Depends(get_db_session)) -> ConversationMemoryService:
-    return ConversationMemoryService(session)
+def get_memory_service(
+    session: AsyncSession = Depends(get_db_session),
+    llm_service: RoutingLLMService = Depends(get_llm_service),
+) -> ConversationMemoryService:
+    return ConversationMemoryService(session, llm_service=llm_service)
 
 
 def get_query_rewrite_service(

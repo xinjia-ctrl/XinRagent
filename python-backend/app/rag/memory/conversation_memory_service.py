@@ -4,7 +4,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.ids import generate_id
-from app.infra_ai.chat import ChatMessage
+from app.core.config import settings
+from app.infra_ai.chat import ChatMessage, ChatRequest, RoutingLLMService
 
 
 @dataclass(frozen=True)
@@ -13,16 +14,37 @@ class AppendedMessage:
     title: str | None = None
 
 
+@dataclass(frozen=True)
+class SummaryRecord:
+    content: str
+    last_message_id: str
+
+
 class ConversationMemoryService:
-    def __init__(self, session: AsyncSession, history_limit: int = 10) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        history_limit: int = 10,
+        *,
+        llm_service: RoutingLLMService | None = None,
+        summary_enabled: bool | None = None,
+        summary_start_messages: int | None = None,
+        keep_recent_messages: int | None = None,
+        summary_max_chars: int | None = None,
+    ) -> None:
         self.session = session
         self.history_limit = history_limit
+        self.llm_service = llm_service
+        self.summary_enabled = settings.rag_memory_summary_enabled if summary_enabled is None else summary_enabled
+        self.summary_start_messages = summary_start_messages or settings.rag_memory_summary_start_messages
+        self.keep_recent_messages = keep_recent_messages or settings.rag_memory_summary_keep_recent_messages
+        self.summary_max_chars = summary_max_chars or settings.rag_memory_summary_max_chars
 
     async def load_history(self, conversation_id: str | None, user_id: str | None) -> list[ChatMessage]:
         if not conversation_id or not user_id:
             return []
 
-        summary = await self._load_latest_summary(conversation_id, user_id)
+        summary = await self._load_latest_summary_record(conversation_id, user_id)
         result = await self.session.execute(
             text(
                 """
@@ -44,7 +66,7 @@ class ConversationMemoryService:
         rows = list(reversed(result.mappings().all()))
         messages = [ChatMessage(role=row["role"], content=row["content"]) for row in rows]
         if summary:
-            messages.insert(0, ChatMessage(role="system", content=f"以下是此前对话摘要：{summary}"))
+            messages.insert(0, ChatMessage(role="system", content=f"以下是此前对话摘要：{summary.content}"))
         return messages
 
     async def append_user_message(
@@ -125,6 +147,26 @@ class ConversationMemoryService:
         await self.session.commit()
         return AppendedMessage(message_id=message_id, title=title)
 
+    async def maybe_compact_history(self, conversation_id: str | None, user_id: str | None) -> None:
+        if not self.summary_enabled or not conversation_id or not user_id:
+            return
+
+        total = await self._count_messages(conversation_id, user_id)
+        if total < self.summary_start_messages:
+            return
+
+        summary_messages = await self._load_messages_for_summary(conversation_id, user_id, total)
+        if not summary_messages:
+            return
+
+        latest_summary = await self._load_latest_summary_record(conversation_id, user_id)
+        last_message_id = str(summary_messages[-1]["id"])
+        if latest_summary is not None and latest_summary.last_message_id == last_message_id:
+            return
+
+        summary_content = await self._summarize_messages(latest_summary, summary_messages)
+        await self._replace_summary(conversation_id, user_id, last_message_id, summary_content)
+
     async def _ensure_conversation(self, conversation_id: str, user_id: str, seed_content: str) -> str:
         title = self._build_title(seed_content)
         conversation_pk = generate_id()
@@ -165,11 +207,11 @@ class ConversationMemoryService:
         )
         return str(existing_title or title)
 
-    async def _load_latest_summary(self, conversation_id: str, user_id: str) -> str | None:
-        result = await self.session.scalar(
+    async def _load_latest_summary_record(self, conversation_id: str, user_id: str) -> SummaryRecord | None:
+        result = await self.session.execute(
             text(
                 """
-                SELECT content
+                SELECT content, last_message_id
                 FROM t_conversation_summary
                 WHERE conversation_id = :conversation_id
                   AND user_id = :user_id
@@ -180,7 +222,137 @@ class ConversationMemoryService:
             ),
             {"conversation_id": conversation_id, "user_id": user_id},
         )
-        return str(result) if result else None
+        row = result.mappings().first()
+        if not row:
+            return None
+        return SummaryRecord(content=str(row["content"]), last_message_id=str(row["last_message_id"]))
+
+    async def _count_messages(self, conversation_id: str, user_id: str) -> int:
+        result = await self.session.scalar(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM t_message
+                WHERE conversation_id = :conversation_id
+                  AND user_id = :user_id
+                  AND deleted = 0
+                """,
+            ),
+            {"conversation_id": conversation_id, "user_id": user_id},
+        )
+        return int(result or 0)
+
+    async def _load_messages_for_summary(
+        self,
+        conversation_id: str,
+        user_id: str,
+        total_messages: int,
+    ) -> list[dict]:
+        limit = max(total_messages - self.keep_recent_messages, 0)
+        if limit <= 0:
+            return []
+        result = await self.session.execute(
+            text(
+                """
+                SELECT id, role, content
+                FROM (
+                    SELECT id, role, content, create_time
+                    FROM t_message
+                    WHERE conversation_id = :conversation_id
+                      AND user_id = :user_id
+                      AND deleted = 0
+                    ORDER BY create_time DESC, id DESC
+                    LIMIT :limit
+                ) AS compact_target
+                ORDER BY create_time ASC, id ASC
+                """,
+            ),
+            {"conversation_id": conversation_id, "user_id": user_id, "limit": limit},
+        )
+        return [dict(row) for row in result.mappings().all()]
+
+    async def _summarize_messages(
+        self,
+        latest_summary: SummaryRecord | None,
+        messages: list[dict],
+    ) -> str:
+        transcript = "\n".join(f"{row['role']}: {row['content']}" for row in messages)
+        existing_summary = latest_summary.content if latest_summary else "无"
+        if self.llm_service is None:
+            return self._fallback_summary(existing_summary, transcript)
+        try:
+            response = await self.llm_service.complete(
+                ChatRequest(
+                    messages=[
+                        ChatMessage(
+                            role="system",
+                            content=(
+                                "你是 RAG 对话记忆摘要器。请把旧摘要和新增对话压缩为一段中文摘要，"
+                                "保留用户目标、关键事实、偏好、约束和未解决问题。"
+                            ),
+                        ),
+                        ChatMessage(
+                            role="user",
+                            content=f"旧摘要：\n{existing_summary}\n\n新增对话：\n{transcript}",
+                        ),
+                    ],
+                    model=settings.ai_chat_default_model,
+                    temperature=0.0,
+                    extra_body={"max_tokens": 512},
+                ),
+            )
+            return self._trim_summary(response.content or self._fallback_summary(existing_summary, transcript))
+        except Exception:
+            return self._fallback_summary(existing_summary, transcript)
+
+    async def _replace_summary(
+        self,
+        conversation_id: str,
+        user_id: str,
+        last_message_id: str,
+        content: str,
+    ) -> None:
+        await self.session.execute(
+            text(
+                """
+                UPDATE t_conversation_summary
+                SET deleted = 1,
+                    update_time = CURRENT_TIMESTAMP
+                WHERE conversation_id = :conversation_id
+                  AND user_id = :user_id
+                  AND deleted = 0
+                """,
+            ),
+            {"conversation_id": conversation_id, "user_id": user_id},
+        )
+        await self.session.execute(
+            text(
+                """
+                INSERT INTO t_conversation_summary (
+                    id, conversation_id, user_id, last_message_id, content
+                )
+                VALUES (
+                    :id, :conversation_id, :user_id, :last_message_id, :content
+                )
+                """,
+            ),
+            {
+                "id": generate_id(),
+                "conversation_id": conversation_id,
+                "user_id": user_id,
+                "last_message_id": last_message_id,
+                "content": self._trim_summary(content),
+            },
+        )
+        await self.session.commit()
+
+    def _fallback_summary(self, existing_summary: str, transcript: str) -> str:
+        combined = f"{existing_summary}\n{transcript}" if existing_summary != "无" else transcript
+        return self._trim_summary(" ".join(combined.split()))
+
+    def _trim_summary(self, content: str) -> str:
+        compact = " ".join(content.strip().split())
+        return compact[: self.summary_max_chars]
 
     @staticmethod
     def _build_title(content: str) -> str:

@@ -4,6 +4,7 @@ from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_tokens import get_token_revocation_store
 from app.core.exceptions import RagentException
 from app.core.security import decode_access_token
 from app.db.session import get_db_session
@@ -29,10 +30,12 @@ def get_access_token(
         raise RagentException(message="未登录或 token 缺失", code="40100", status_code=401)
 
 
-def get_token_payload(token: str = Depends(get_access_token)) -> dict[str, Any]:
+async def get_token_payload(token: str = Depends(get_access_token)) -> dict[str, Any]:
     payload = decode_access_token(token)
     if payload is None:
         raise RagentException(message="无效或过期的 token", code="40100", status_code=401)
+    if await get_token_revocation_store().is_revoked(str(payload["jti"])):
+        raise RagentException(message="token 已失效，请重新登录", code="40100", status_code=401)
     return payload
 
 

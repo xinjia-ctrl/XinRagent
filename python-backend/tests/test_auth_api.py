@@ -39,6 +39,8 @@ def test_login_api_returns_access_token() -> None:
     assert body["code"] == "0"
     assert body["data"]["token_type"] == "Bearer"
     assert body["data"]["access_token"]
+    assert body["data"]["refresh_token"]
+    assert body["data"]["refreshToken"] == body["data"]["refresh_token"]
     assert body["data"]["token"] == body["data"]["access_token"]
     assert body["data"]["userId"] == "1"
     assert body["data"]["username"] == "admin"
@@ -77,6 +79,12 @@ def test_logout_api_accepts_valid_token() -> None:
     assert response.status_code == 200
     assert response.json() == {"code": "0", "message": "success", "data": None}
 
+    second_logout_response = client.post(
+        "/api/ragent/auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second_logout_response.status_code == 401
+
 
 def test_logout_api_accepts_raw_authorization_token() -> None:
     app = create_app()
@@ -99,6 +107,34 @@ def test_logout_api_accepts_raw_authorization_token() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"code": "0", "message": "success", "data": None}
+
+
+def test_refresh_api_rotates_refresh_token() -> None:
+    app = create_app()
+    app.dependency_overrides[get_db_session] = override_db_session
+    client = TestClient(app)
+    user = create_authenticated_test_user()
+
+    with patch("app.services.auth_service.UserRepository") as repository_class:
+        repository_class.return_value.get_by_username = AsyncMock(return_value=user)
+        repository_class.return_value.get = AsyncMock(return_value=user)
+        login_response = client.post(
+            "/api/ragent/auth/login",
+            json={"username": "admin", "password": "secret"},
+        )
+        refresh_token = login_response.json()["data"]["refresh_token"]
+        refresh_response = client.post(
+            "/api/ragent/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+        old_refresh_response = client.post(
+            "/api/ragent/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()["data"]["refresh_token"] != refresh_token
+    assert old_refresh_response.status_code == 401
 
 
 def test_protected_user_api_rejects_missing_authorization() -> None:

@@ -1,6 +1,7 @@
 import type { User } from "@/types";
 
 const TOKEN_KEY = "ragent_token";
+const REFRESH_TOKEN_KEY = "ragent_refresh_token";
 const USER_KEY = "ragent_user";
 const THEME_KEY = "ragent_theme";
 
@@ -35,8 +36,15 @@ export const storage = {
   setToken(token: string) {
     safeSet(TOKEN_KEY, token);
   },
+  getRefreshToken(): string | null {
+    return safeGet(REFRESH_TOKEN_KEY);
+  },
+  setRefreshToken(token: string) {
+    safeSet(REFRESH_TOKEN_KEY, token);
+  },
   clearToken() {
     safeRemove(TOKEN_KEY);
+    safeRemove(REFRESH_TOKEN_KEY);
   },
   getUser(): User | null {
     const raw = safeGet(USER_KEY);
@@ -55,6 +63,7 @@ export const storage = {
   },
   clearAuth() {
     safeRemove(TOKEN_KEY);
+    safeRemove(REFRESH_TOKEN_KEY);
     safeRemove(USER_KEY);
   },
   getTheme(): string | null {

@@ -80,11 +80,20 @@ REDIS_URL=redis://localhost:6379/0
 
 AUTH_SECRET_KEY=ragent-dev-secret
 AUTH_TOKEN_EXPIRE_SECONDS=86400
+AUTH_REFRESH_TOKEN_EXPIRE_SECONDS=604800
+AUTH_TOKEN_ISSUER=ragent-python
+AUTH_TOKEN_AUDIENCE=ragent-web
+AUTH_TOKEN_STORE_BACKEND=memory
+AUTH_AUDIT_BACKEND=memory
 
 RAG_DEFAULT_COLLECTION_NAME=rag_default_store
 RAG_DEFAULT_DIMENSION=1536
 RAG_DEFAULT_TOP_K=5
 RAG_QUEUE_LIMIT_ENABLED=false
+RAG_MEMORY_SUMMARY_ENABLED=true
+RAG_MEMORY_SUMMARY_START_MESSAGES=12
+RAG_MEMORY_SUMMARY_KEEP_RECENT_MESSAGES=8
+RAG_MEMORY_SUMMARY_MAX_CHARS=1200
 RAG_MCP_SERVERS=
 MCP_HOST=0.0.0.0
 MCP_PORT=9091
@@ -122,6 +131,10 @@ ragent-mcp-server
 
 # 运行测试
 python -m pytest
+
+# 有真实 Milvus 时运行 collection/index/search/delete/rebuild 集成验证
+$env:MILVUS_INTEGRATION_ENABLED="true"
+python -m pytest tests\test_milvus_integration.py
 
 # 只运行 RAG 相关测试
 python -m pytest tests\test_rag_chat_api.py tests\test_rag_vector_chain.py

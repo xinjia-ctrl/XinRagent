@@ -9,6 +9,10 @@ import { storage } from "@/utils/storage";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/ragent";
 
+type RetryableAxiosConfig = AxiosRequestConfig & {
+  _retry?: boolean;
+};
+
 interface DataApi extends Omit<AxiosInstance, "get" | "delete" | "post" | "put" | "patch" | "request"> {
   request<T = unknown, R = T, D = unknown>(config: AxiosRequestConfig<D>): Promise<R>;
   get<T = unknown, R = T>(url: string, config?: AxiosRequestConfig): Promise<R>;
@@ -25,9 +29,11 @@ const axiosApi = axios.create({
 
 export const api = axiosApi as DataApi;
 
+let refreshPromise: Promise<string | null> | null = null;
+
 export function setAuthToken(token: string | null) {
   if (token) {
-    api.defaults.headers.common.Authorization = token;
+    api.defaults.headers.common.Authorization = bearerToken(token);
   } else {
     delete api.defaults.headers.common.Authorization;
   }
@@ -36,7 +42,7 @@ export function setAuthToken(token: string | null) {
 axiosApi.interceptors.request.use((config) => {
   const token = storage.getToken();
   if (token) {
-    config.headers.Authorization = token;
+    config.headers.Authorization = bearerToken(token);
   }
   return config;
 });
@@ -60,7 +66,25 @@ axiosApi.interceptors.response.use(
     }
     return payload;
   },
-  (error) => {
+  async (error) => {
+    const originalConfig = error?.config as RetryableAxiosConfig | undefined;
+    if (
+      error?.response?.status === 401 &&
+      originalConfig &&
+      !originalConfig._retry &&
+      !String(originalConfig.url || "").includes("/auth/refresh")
+    ) {
+      originalConfig._retry = true;
+      const nextToken = await refreshAuthToken();
+      if (nextToken) {
+        originalConfig.headers = {
+          ...(originalConfig.headers || {}),
+          Authorization: bearerToken(nextToken)
+        };
+        return axiosApi.request(originalConfig);
+      }
+    }
+
     if (error?.response?.status === 401) {
       storage.clearAuth();
       if (window.location.pathname !== "/login") {
@@ -78,3 +102,36 @@ axiosApi.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+function bearerToken(token: string) {
+  return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
+}
+
+async function refreshAuthToken(): Promise<string | null> {
+  const currentRefreshToken = storage.getRefreshToken();
+  if (!currentRefreshToken) return null;
+
+  refreshPromise ??= requestRefreshToken(currentRefreshToken).finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+async function requestRefreshToken(refreshToken: string): Promise<string | null> {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+      refresh_token: refreshToken
+    });
+    const payload = response.data;
+    const data = payload && typeof payload === "object" && "data" in payload ? payload.data : payload;
+    const accessToken = data?.token || data?.access_token;
+    const nextRefreshToken = data?.refreshToken || data?.refresh_token;
+    if (!accessToken || !nextRefreshToken) return null;
+    storage.setToken(accessToken);
+    storage.setRefreshToken(nextRefreshToken);
+    setAuthToken(accessToken);
+    return accessToken;
+  } catch {
+    return null;
+  }
+}

@@ -7,6 +7,7 @@ from app.main import create_app
 
 EXPECTED_FRONTEND_ROUTES = {
     ("POST", "/api/ragent/auth/login"),
+    ("POST", "/api/ragent/auth/refresh"),
     ("POST", "/api/ragent/auth/logout"),
     ("GET", "/api/ragent/user/me"),
     ("PUT", "/api/ragent/user/password"),

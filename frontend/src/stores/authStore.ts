@@ -32,9 +32,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         username: data.username || username,
         role: data.role,
         token: data.token,
+        refreshToken: data.refreshToken || data.refresh_token,
         avatar: data.avatar
       };
       storage.setToken(user.token);
+      storage.setRefreshToken(user.refreshToken);
       storage.setUser(user);
       setAuthToken(user.token);
       set({ user, token: user.token, isAuthenticated: true });
@@ -102,7 +104,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!token) return;
     try {
       const data = await getCurrentUser();
-      const nextUser = { ...data, token };
+      const nextUser = { ...data, token, refreshToken: storage.getRefreshToken() || undefined };
       storage.setUser(nextUser);
       set({ user: nextUser, token, isAuthenticated: true });
     } catch {

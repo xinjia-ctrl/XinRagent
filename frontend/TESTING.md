@@ -75,8 +75,16 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:9090
 cd D:\XinRagent\frontend
 npm run typecheck
 npm run lint
+npm run test:parity
 npm run build
 ```
+
+`npm run test:parity` 会静态校验：
+
+- 路由表是否覆盖聊天页和主要后台页面。
+- 服务层是否仍绑定 Python 后端核心接口。
+- 主要后台页面是否引用对应服务。
+- 登录、refresh token 自动续期和登出链路是否仍接入。
 
 后端测试：
 
